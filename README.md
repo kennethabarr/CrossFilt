@@ -48,7 +48,7 @@ By default, if a read fails to lift on the best chain, this tool will proceed to
 
 In our hands, this tool takes about 2-3 minutes per 1M reads and for most human chain files it requires about 3GB of RAM. For large experiments this may be computationally expensive and we reccomend splitting the bam into smaller peices. The program will only store chains for chromosomes present in the bam file, so the memory requirements will decrease significantly when the bam file is split. For single-end reads you may split the bam file any way you like, but for paired-end reads it is essential that both ends are present in the same file. For that reason we have provided a tool split_bam.py that will split a file into equal sized peices. 
 
-### liftover_bam.py 
+### split_bam.py 
 
 ```
 usage: split_bam.py [-h] -i INPUT -o OUTPUT -c CHUNK_SIZE [-n NCPU] [-p]
