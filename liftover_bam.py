@@ -1,20 +1,22 @@
+#!/usr/bin/python3
+
 import sys
 import argparse
 import pysam
 import logging
 import array
-import numpy as np
 from timeit import default_timer as timer
 from lib import liftover_functions as lift
 import math
 import os
+from random import randint
 
 parser = argparse.ArgumentParser(
                     prog='liftover_bam.py',
                     description='Converts genome coordinates and nucleotide sequence for othologous segments in a BAM file')
 
 parser.add_argument("-i", "--input",         required=True,  help="The input BAM file to convert")
-parser.add_argument("-o", "--output",        required=True,  help="Prefix for the output files")
+parser.add_argument("-o", "--output",        required=True,  help="Name prefix for the output file")
 parser.add_argument("-c", "--chain",         required=True,  help="The UCSC chain file")
 parser.add_argument("-t", "--target-fasta",  required=True,  help="The genomic sequence of the target (the species we are converting from)")
 parser.add_argument("-q", "--query-fasta",   required=True,  help="The genomic sequence of the query (the species we are converting to)")
@@ -55,7 +57,7 @@ for i in index_stats:
     nreads_dict[i[0]] = i[3]
     total_reads += i[3]
     if i[0] not in TARGETFILE.references:
-      raise Exception("Contig " + i[0] + " not found in fasta file. Did you use the right contig names?")
+      sys.exit("Contig " + i[0] + " not found in fasta file. Did you use the right contig names?")
 
 
 #######################################################################
@@ -94,8 +96,13 @@ comments=['ORIGINAL_BAM_FILE=' + infile]
                                                      sort_type   = 'coordinate',
                                                      co          = comments)
 
+
+
+tempname = outfile_prefix + '.temp' + str(randint(0,99999)) + '.bam'
+tempfile = pysam.Samfile(tempname, "wb", header = new_header)
+
 kwds = {'SAMFILE'        : SAMFILE, 
-        'outfile_prefix' : outfile_prefix, 
+        'outfile'        : tempfile, 
         'old_header'     : old_header, 
         'new_header'     : new_header, 
         'target_fasta'   : TARGETFILE, 
@@ -111,6 +118,8 @@ if is_paired:
 else:
   result = lift.process_se(**kwds)
         
+tempfile.close()
+
 end = timer()
 print("Completed in", round(end-start,2), "seconds\n", file=sys.stderr)
 
@@ -134,9 +143,9 @@ QUERYFILE.close()
 start = timer()
 print("Sorting",file=sys.stderr)
 
-pysam.sort("-o", outfile_prefix + ".query.sorted.bam", outfile_prefix + ".query.bam")
-pysam.index(outfile_prefix + ".query.sorted.bam")
-os.remove(outfile_prefix + ".query.bam")
+pysam.sort("-o", outfile_prefix + ".bam", tempname)
+pysam.index(outfile_prefix + ".bam")
+os.remove(tempname)
 
 end = timer()
 print("Completed in", round(end-start,2), "seconds\n", file=sys.stderr)

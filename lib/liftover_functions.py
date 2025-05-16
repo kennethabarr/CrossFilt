@@ -645,7 +645,7 @@ def get_genome_chunks(tSizes,n):
     
 
 def process_se(SAMFILE        = None, 
-               outfile_prefix = None, 
+               outfile        = None, 
                old_header     = None, 
                new_header     = None, 
                target_fasta   = None, 
@@ -658,7 +658,8 @@ def process_se(SAMFILE        = None,
                best           = None):
     
     #OUT_FILE_TARGET = pysam.Samfile( outfile_prefix + '.target.bam', "wb", header = old_header)
-    OUT_FILE_QUERY  = pysam.Samfile( outfile_prefix + '.query.bam', "wb", header = new_header)
+    #OUT_FILE_QUERY  = pysam.Samfile( outfile_prefix + '.temp.bam', "wb", header = new_header)
+    OUT_FILE_QUERY = outfile
     
     index_stats = SAMFILE.get_index_statistics()
     target_contig_list = []
@@ -760,13 +761,13 @@ def process_se(SAMFILE        = None,
         OUT_FILE_QUERY.write(new_alignment)
         
     #OUT_FILE_TARGET.close()
-    OUT_FILE_QUERY.close()
+    #OUT_FILE_QUERY.close()
     
     return (nreads, n0, n1, n2, n3, n4)
   
   
 def process_pe(SAMFILE        = None, 
-               outfile_prefix = None, 
+               outfile        = None, 
                old_header     = None, 
                new_header     = None, 
                target_fasta   = None, 
@@ -781,7 +782,8 @@ def process_pe(SAMFILE        = None,
     #print(old_header)
     
     #OUT_FILE_TARGET = pysam.Samfile( outfile_prefix + '.target.bam', "wb", header = old_header)
-    OUT_FILE_QUERY  = pysam.Samfile( outfile_prefix + '.query.bam', "wb", header = new_header)
+    #OUT_FILE_QUERY  = pysam.Samfile( outfile_prefix + '.temp.bam', "wb", header = new_header)
+    OUT_FILE_QUERY = outfile
     
     index_stats = SAMFILE.get_index_statistics()
     target_contig_list = []
@@ -961,6 +963,6 @@ def process_pe(SAMFILE        = None,
         OUT_FILE_QUERY.write(new_alignment2)
         
     #OUT_FILE_TARGET.close()
-    OUT_FILE_QUERY.close()
+    #OUT_FILE_QUERY.close()
     
     return (nreads, n0, n1, n2, n3, n4)
