@@ -1,6 +1,6 @@
 # CrossFilt
 
-CrossFilt is a tool developed to identify reads that cause alignment or annotation bias in Cross-species genomic comparisons. We have tested it on RNA-seq and ATAC-seq, but it should be widely applicable to other genomic technologies. This tool works by lifting bam alignments from one species to another. This tool converts any sequence that matches the genome to that of the other species. Then we realign these reads in the other species. Finally, we lift the realigned reads back to the original genome and check which reads return the original coordinates. We only consider these reciprocally mapping reads in genomic comparisons
+CrossFilt is a tool developed to filter reads that cause alignment or annotation bias in cross-species genomic comparisons. We have tested it on RNA-seq and ATAC-seq, but it should be widely applicable to other genomic technologies. This tool works by lifting bam alignments from one species to another. This tool converts any sequence that matches the genome to that of the other species. Then we realign these reads in the other species. Finally, we lift the realigned reads back to the original genome and check which reads return the original coordinates. We only consider these reciprocally mapping reads in genomic comparisons
 
 ## Installation
 
@@ -31,7 +31,7 @@ options:
   -i INPUT, --input INPUT
                         The input BAM file to convert
   -o OUTPUT, --output OUTPUT
-                        Prefix for the output files
+                        Name prefix for the output file
   -c CHAIN, --chain CHAIN
                         The UCSC chain file
   -t TARGET_FASTA, --target-fasta TARGET_FASTA
@@ -42,7 +42,7 @@ options:
   -b, --best            Only attempt to lift using the best chain
 ```
 
-This tool will lift reads from the target genome to the query genome using the provided chain file and genomes. It must be run on sorted and indexed bam files, so if the file is not sorted please do so using `samtools sort` and `samtools index`. It is compatible with single and paired end reads, which can be specified by the `--paired` flag. The output is written to a file specified by the output prefix flag. This fill will have '.query.sorted.bam' appended to the prefix to speficy that these reads are sorted and in query genome coordinates. For simple RNA-seq experiments these reads can then be converted back to fastq for realignment using `samtools fastq`. We have also used this on 10x genomics single-cell data using the 'bamtofastq' provided by 10x genomics. 
+This tool will lift reads from the target genome to the query genome using the provided chain file and genomes. It must be run on sorted and indexed bam files, so if the file is not sorted please do so using `samtools sort` and `samtools index`. It is compatible with single and paired end reads, which can be specified by the `--paired` flag. The output is written to a bam file specified by the output prefix flag. For simple RNA-seq experiments these reads can then be converted back to fastq for realignment using `samtools fastq`. We have also used this on 10x genomics single-cell data using the 'bamtofastq' provided by 10x genomics. 
 
 By default, if a read fails to lift on the best chain, this tool will proceed to the next best chain and try again. It will continue trying for all chains. A user can override this behavior with the `--best` flag, in which case the tool will only attempt to lift using the best chain. In our experience with primates this decreases the number of reads that successfully lift by about 5%, while decreasing the time it takes to run the tool by about 10%. 
 
@@ -51,9 +51,10 @@ In our hands, this tool takes about 2-3 minutes per 1M reads and for most human 
 ### split_bam.py 
 
 ```
-usage: split_bam.py [-h] -i INPUT -o OUTPUT -c CHUNK_SIZE [-n NCPU] [-p]
+usage: split_bam.py [-h] -i INPUT -o OUTPUT [-n NCPU] [-p] (-f NFILES | -s FILE_SIZE)
 
-Splits a bam file into equal sized chunks, keeping paired reads together
+Splits a bam file into equal sized chunks, keeping paired reads together. This may return fewer files than expected if
+many reads are missing a pair.
 
 options:
   -h, --help            show this help message and exit
@@ -61,35 +62,39 @@ options:
                         The input BAM file to split
   -o OUTPUT, --output OUTPUT
                         Prefix for the output files
-  -c CHUNK_SIZE, --chunk-size CHUNK_SIZE
-                        The number of reads per file
   -n NCPU, --ncpu NCPU  The number of CPU cores to use
   -p, --paired          Add this flag if the reads are paired
+  -f NFILES, --nfiles NFILES
+                        The number of files to split this into
+  -s FILE_SIZE, --file-size FILE_SIZE
+                        The number of reads per file
 ```
 
-To decrease run-time we reccomend splitting input bam files into smaller peices. This tool will split a bam file into chunks of CHUNK_SIZE reads. If reads are paired, it will ensure that both ends are kept in the same file. the number of CPUs passed to pysam for I/O and sorting can be changed with NCPU. 
+To decrease run-time we reccomend splitting input bam files into smaller peices. The user can specify either the number of reads per file with FILE_SIZE or the number of files to split into with NFILES. If reads are paired, it will ensure that both ends are kept in the same file. The tool will compute the number of files needed based on the total reads present in the index, but if reads are paired and many reads dont have a mate present in the file then it is possible that it will produce fewer files than specified. The number of CPUs passed to pysam for I/O and sorting can be changed with NCPU. 
 
 ### identical_reads.py and identical_reads_xf.py
 
 ```
-Usage: identical_reads.py bam1 bam2 > reads.txt
-Usage: identical_reads_xf.py bam1 bam2 > reads.txt
+usage: identical_reads.py [-h] [-x] bam1 bam2
+
+Outputs reads from bam1 that that have identical contig, position, CIGAR string, and XF tag (optional) in bam2
+
+positional arguments:
+  bam1        Input bam files.
+  bam2        Input bam files.
+
+options:
+  -h, --help  show this help message and exit
+  -x, --xf    Require identical XF tag
 ```
 
-These tools will check whether the reads in two files are identical according to their chromosome, start position, and CIGAR string. Additionally, if running `identical_reads_xf.py`, it will check if the XF tag is identical in two files. The XF tag in a bam file is used by tools like STAR, htseq-count, and 10x cellranger to assign the feature that a read counts towards. 
+These tools will check whether the reads in two files are identical according to their chromosome, start position, and CIGAR string. Additionally, if the optional xf flag is included, it will check if the XF tag is identical in two files. The XF tag in a bam file is used by tools like STAR, htseq-count, and 10x cellranger to assign the feature that a read counts towards. 
 
-To run these tools the files must be filtered to include the exact same seq of read names, and the files must be sorted by name. In our case, bam2 is created from lifting or realigning bam1, so bam2 necessarily contains a subset of bam1. To ensure an identical set of reads we only have to filter bam1 for reads in bam2. For example we can prepare these files using the following commands in samtools:
+This tool will run on either position sorted and indexed files or on filtered and name sorted files. If an index file is not provided the tool will proceed under the assumption that reads appear in the exact same order in each file (i.e. both files contain the exact same set of reads and reads are sorted by read name).
 
-```
-samtools view bam2 | cut -f1 > keep.txt
-samtools view -b -N keep.txt bam1 > bam1.filtered
-samtools sort -n bam1.filtered > bam1.filtered.byname
-samtools sort -n bam2 > bam2.byname
-identical_reads.py bam1.filtered.byname bam2.byname > reads.txt
-```
+This tool will output the bam1 reads that have perfect matches in bam2. 
 
-The file reads.txt then contains read names that are identical in bam1 and bam2. 
-
+If bam1 and bam2 are significantly different in size, this tool will be slightly more efficient if bam1 is the larger file.
 
 
 
