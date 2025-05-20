@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools >= 77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+
+name = "CrossFilt"
+description = "Tools to filter reads causing alignment bias in cross-species genomic comparisons"
+license = "GPL-3.0-or-later"
+readme = "README.md"
+keywords = ["comparative genomics", "primate genetics", "alignment bias"]
+
+dependencies = [
+  "pysam",
+  "intervaltree"
+]
+
+requires-python = ">= 3.6"
+version = "0.1.0"
+
+authors = [
+  {name = "Kenneth A Barr", email = "kenneth.a.barr@gmail.com"}
+]
+  
+[project.scripts]
+crossfilt-lift   = "CrossFilt.liftover_bam:main"
+crossfilt-split  = "CrossFilt.split_bam:main"
+crossfilt-filter = "CrossFilt.identical_reads:main"
+
+[project.urls]
+Repository = "https://github.com/kennethabarr/CrossFilt.git"
