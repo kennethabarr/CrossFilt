@@ -20,13 +20,15 @@ conda install bioconda::crossfilt
 
 This will create three scripts for implementing our method: crossfilt-lift, crossfilt-filter and crossfilt-split. 
 
-We have included a test script and input files to verify that your installation is working corretly. To run this, clone this repository, navigate to the test directory and run
+We have included a test script and input files to verify that your installation is working corretly. This also serves as an example of how to run this pipeline to get filtered, unbiased reads for cross-species comparisons. This test will require STAR, htseq-count, and samtools. To run the test, clone this repository, navigate to the test directory and run
 
 ```
+conda create -n crossfilt bioconda::crossfilt bioconda::star bioconda::samtools bioconda::htseq
+conda activate crossfilt
 bash test.sh
 ```
 
-This script will lift a set ~500k reads to and then from the chimpanzee genome, then check if they return the same original coordinates. On our system it takes about 2 minutes to run on a single thread. If things work properly it should finish with the message "460826 (100.0%) successfully matched"
+This script will lift a set ~500k human chr22 reads to and then from the chimpanzee genome, then check if they return the same original coordinates and gene tag.
 
 ## Tools
 
