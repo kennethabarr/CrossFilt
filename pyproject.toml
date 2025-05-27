@@ -15,8 +15,8 @@ dependencies = [
   "intervaltree"
 ]
 
-requires-python = ">= 3.6"
-version = "0.1.1"
+requires-python = ">= 3.10"
+version = "0.1.2"
 
 authors = [
   {name = "Kenneth A Barr", email = "kenneth.a.barr@gmail.com"}
