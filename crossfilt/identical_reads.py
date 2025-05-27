@@ -69,7 +69,7 @@ def main():
         del read2_dict[read1_id]
         
       # clear out the cache of reads that we have passed
-      for read2_id, read2 in read2_dict.copy.items():
+      for read2_id, read2 in read2_dict.copy().items():
         if read2.reference_start < pos:
           del read2_dict[read2_id]
     
