@@ -10,6 +10,7 @@
 # the reads for those that do not show alignment or annotation bias in a 
 # comparisson between humans and chimpanzees.
 
+set -e
 
 ############ INPUT FILES #################
 
@@ -153,3 +154,101 @@ rm -r tmp_query_alignment
 rm -r tmp_target_alignment
 
 
+############ REPEAT PROCESS TO TEST PAIRED ENDS #################
+
+############ RUN INITIAL ALIGNMENT TO TARGET #################
+
+mkdir tmp_target_alignment
+
+STAR \
+  --genomeDir STARrefs/human \
+  --readFilesIn test_1.fastq.gz test_2.fastq.gz \
+  --readFilesCommand zcat \
+  --outSAMmultNmax 1 \
+  --outFilterMultimapNmax 1 \
+  --outSAMtype BAM SortedByCoordinate \
+  --outFileNamePrefix tmp_target_alignment/test
+
+# add the xf tag with ht-seq count
+htseq-count --quiet --stranded=no -a 0 -i gene_name \
+  -o tmp_target_alignment/test.counted.bam -p bam \
+  tmp_target_alignment/testAligned.sortedByCoord.out.bam $TARGET_GTF > \
+  tmp_target_alignment/test.counts.txt 
+  
+# index this file
+samtools sort tmp_target_alignment/test.counted.bam > \
+  tmp_target_alignment/test.counted.sorted.bam
+samtools index tmp_target_alignment/test.counted.sorted.bam
+
+############ LIFT TO QUERY GENOME AND ALIGN TO QUERY #################
+
+mkdir tmp_query_alignment/
+
+# run liftover to query genome
+crossfilt-lift \
+  -i tmp_target_alignment/test.counted.sorted.bam \
+  -o tmp_query_alignment/test.lifted \
+  -c $TARGET2QUERY \
+  -t $TARGET_FA \
+  -q $QUERY_FA \
+  --paired
+  
+# convert back to fastq
+samtools fastq -1 tmp_query_alignment/query_1.fa \
+               -2 tmp_query_alignment/query_2.fa \
+               tmp_query_alignment/test.lifted.bam > /dev/null
+gzip tmp_query_alignment/query_1.fa
+gzip tmp_query_alignment/query_2.fa
+
+# realign to query genome
+STAR \
+  --genomeDir STARrefs/chimp \
+  --readFilesIn tmp_query_alignment/query_1.fa.gz tmp_query_alignment/query_2.fa.gz \
+  --readFilesCommand zcat \
+  --outSAMmultNmax 1 \
+  --outFilterMultimapNmax 1 \
+  --outSAMtype BAM SortedByCoordinate \
+  --outFileNamePrefix tmp_query_alignment/query 
+  
+# add the xf tag with ht-seq count
+htseq-count --quiet --stranded=no -a 0 -i gene_name \
+  -o tmp_query_alignment/test.counted.bam -p bam \
+  tmp_query_alignment/queryAligned.sortedByCoord.out.bam $QUERY_GTF > \
+  tmp_query_alignment/test.counts.txt 
+
+# index this file
+samtools sort tmp_query_alignment/test.counted.bam > \
+  tmp_query_alignment/test.counted.sorted.bam
+samtools index tmp_query_alignment/test.counted.sorted.bam
+
+# filter for reads that align to the same spot in the query. Note that
+# we provide the counted bam first, so xf tag will carry over to the output. This
+# tag is not in the lifted bam file. We will need this xf tag when we lift back
+# to the human (target) genome.
+crossfilt-filter \
+  tmp_query_alignment/test.counted.sorted.bam \
+  tmp_query_alignment/test.lifted.bam > \
+  tmp_query_alignment/test.passed.bam
+
+
+############ LIFT BACK TO TARGET #################
+
+crossfilt-lift \
+  -i tmp_query_alignment/test.passed.bam \
+  -o tmp_target_alignment/test.liftedback \
+  -c $QUERY2TARGET \
+  -t $QUERY_FA \
+  -q $TARGET_FA \
+  --paired
+  
+# find reads that lifted back and mapped to the same gene.
+crossfilt-filter --xf \
+  tmp_target_alignment/test.liftedback.bam \
+  tmp_target_alignment/test.counted.sorted.bam > \
+  test_paired.filtered.bam
+  
+# the final file here is the test_paired.filtered.bam file. It is now ready for counting
+# with htseq-count to get unbiassed counts.
+
+rm -r tmp_query_alignment
+rm -r tmp_target_alignment

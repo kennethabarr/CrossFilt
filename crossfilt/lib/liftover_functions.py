@@ -1,6 +1,5 @@
-#import bx.intervals.intersection as bx
+import bx.intervals.intersection as bx
 import sys
-import intervaltree as it
 import pysam
 import logging
 import array
@@ -80,37 +79,9 @@ def bam_header_generator(orig_header, chrom_size, prog_name, prog_ver, co, forma
             bamHeaderLine['CO'] = [comment]
     return (bamHeaderLine, name2id)
 
-def revcomp_DNA(dna, extended=True):
-    '''
-    Reverse complement of input DNA sequence.
-
-    Parameters
-    ----------
-    dna : str
-        DNA sequences made of 'A', 'C', 'G', 'T', 'N' or 'X'
-
-    extended : bool
-        Support full IUPAC nucleotides.
-
-    Examples
-    --------
-    >>> revcomp_DNA('AACGTG')
-    'CACGTT'
-    '''
-    if extended:
-        complement = {'A': 'T', 'C': 'G', 'G': 'C', 'T': 'A', 'Y': 'R', 'R': 'Y', 'S': 'W', 'W': 'S', 'K': 'M', 'M': 'K', 'B': 'V', 'V': 'B', 'D': 'H', 'H': 'D', 'N': 'N', '.':'.', '*':'*'}
-    else:
-        complement = {'A':'T','C':'G','G':'C','T':'A','N':'N','X':'X'}
-
-    seq = dna.replace(' ','').upper()
-    if ',' not in seq:
-        return ''.join([complement[base] for base in reversed(seq)])
-    else:
-        seqs = seq.split(',')
-        comp_seqs = []
-        for s in seqs:
-            comp_seqs.append(''.join([complement[base] for base in reversed(s)]))
-        return ','.join(comp_seqs)
+complement = {'A':'T','C':'G','G':'C','T':'A','N':'N','X':'X'}
+def revcomp_DNA(dna):
+    return ''.join([complement[base] for base in reversed(dna)])
 
 def read_chain_sizes(chain_file,target_contig_list, query_contig_list):
     chainnames = ["score","tName","tSize","tStrand","tStart","tEnd","qName","qSize","qStrand","qStart","qEnd","id"]
@@ -203,28 +174,16 @@ def read_chain_file(chain_file,target_contig_list, query_contig_list):
             
             if this_chain['tName'] not in target_contig_list:
                 skip = True
-                #if (this_chain['tName'].find("alt") == -1 and
-                #   this_chain['tName'].find("fix") == -1 and
-                #   this_chain['tName'].find("chrUn") == -1 and
-                #   this_chain['tName'].find("random") == -1):
-                #  print("Message: Contig " + this_chain['tName'] + " not in target file. Skipping chain", file=sys.stderr)
-            
+
             if this_chain['qName'] not in query_contig_list:
                 skip = True
-                #if (this_chain['qName'].find("alt") == -1 and
-                #   this_chain['qName'].find("fix") == -1 and
-                #   this_chain['qName'].find("chrUn") == -1 and
-                #   this_chain['qName'].find("random") == -1):
-                #  print("Message: Contig " + this_chain['qName'] + " not in query file. Skipping chain", file=sys.stderr)
                 
             if skip: continue
             
-            #this_chain['mapTree'] = bx.Intersecter()
-            this_chain['mapTree'] = it.IntervalTree()
+            this_chain['mapTree'] = bx.Intersecter()
         
             if this_chain['tName'] not in maps:
-                #print(this_chain['tName'],file=sys.stderr)
-                maps[this_chain['tName']] = it.IntervalTree()
+                maps[this_chain['tName']] = bx.Intersecter()
                 
             tfrom, qfrom = this_chain['tStart'], this_chain['qStart']
             
@@ -237,11 +196,9 @@ def read_chain_file(chain_file,target_contig_list, query_contig_list):
             size, tgap, qgap = int(fields[0]), int(fields[1]), int(fields[2])
             
             if this_chain['qStrand'] == '+':
-                this_chain['mapTree'].addi(tfrom, tfrom+size,(this_chain['qName'],qfrom, qfrom+size,this_chain['qStrand']))
-                #this_chain['mapTree'].add_interval( bx.Interval(tfrom, tfrom+size,(this_chain['qName'],qfrom, qfrom+size,this_chain['qStrand'])))
+                this_chain['mapTree'].add_interval( bx.Interval(tfrom, tfrom+size,(this_chain['qName'],qfrom, qfrom+size,this_chain['qStrand'])))
             elif this_chain['qStrand'] == '-':
-                this_chain['mapTree'].addi(tfrom, tfrom+size,(this_chain['qName'],this_chain['qSize'] - (qfrom+size), this_chain['qSize'] - qfrom, this_chain['qStrand']))
-                #this_chain['mapTree'].add_interval( bx.Interval(tfrom, tfrom+size,(this_chain['qName'],this_chain['qSize'] - (qfrom+size), this_chain['qSize'] - qfrom, this_chain['qStrand'])))
+                this_chain['mapTree'].add_interval( bx.Interval(tfrom, tfrom+size,(this_chain['qName'],this_chain['qSize'] - (qfrom+size), this_chain['qSize'] - qfrom, this_chain['qStrand'])))
                 
             tfrom += size + tgap
             qfrom += size + qgap
@@ -251,12 +208,10 @@ def read_chain_file(chain_file,target_contig_list, query_contig_list):
             size = int(fields[0])
 
             if this_chain['qStrand'] == '+':
-                this_chain['mapTree'].addi( tfrom, tfrom+size,(this_chain['qName'],qfrom, qfrom+size,this_chain['qStrand']))
-                #this_chain['mapTree'].add_interval( bx.Interval(tfrom, tfrom+size,(this_chain['qName'],qfrom, qfrom+size,this_chain['qStrand'])))
+                this_chain['mapTree'].add_interval( bx.Interval(tfrom, tfrom+size,(this_chain['qName'],qfrom, qfrom+size,this_chain['qStrand'])))
             elif this_chain['qStrand'] == '-':
-                this_chain['mapTree'].addi( tfrom, tfrom+size,(this_chain['qName'],this_chain['qSize'] - (qfrom+size), this_chain['qSize'] - qfrom, this_chain['qStrand']))
-                #this_chain['mapTree'].add_interval( bx.Interval(tfrom, tfrom+size,(this_chain['qName'],this_chain['qSize'] - (qfrom+size), this_chain['qSize'] - qfrom, this_chain['qStrand'])))
-            maps[this_chain['tName']].addi(this_chain['tStart'],this_chain['tEnd'], this_chain)
+                this_chain['mapTree'].add_interval( bx.Interval(tfrom, tfrom+size,(this_chain['qName'],this_chain['qSize'] - (qfrom+size), this_chain['qSize'] - qfrom, this_chain['qStrand'])))
+            maps[this_chain['tName']].add_interval(bx.Interval(this_chain['tStart'],this_chain['tEnd'], this_chain))
             
         else:
             raise Exception("Invalid chain format. (%s)" % line)
@@ -275,19 +230,19 @@ def get_chr_chains(maps, chrom): # we dont want to keep having to keep checking 
         return maps[chrom]
 
 def get_chains(chr_chains, start, end):
-    chains = sorted(chr_chains.overlap(start, end), key=lambda chain: -chain.data['score'])
+    chains = sorted(chr_chains.find(start, end), key=lambda chain: -chain.value['score'])
     out = []
     for chain in chains:
-        if inside(start, end, chain.data['tStart'],chain.data['tEnd']):
+        if inside(start, end, chain.value['tStart'],chain.value['tEnd']):
             out.append(chain)
     return(out)
   
 def get_chains_pe(chr_chains, start1, end1, start2, end2):
-    chains = sorted(chr_chains.overlap(start1, end1), key=lambda chain: -chain.data['score'])
+    chains = sorted(chr_chains.find(start1, end1), key=lambda chain: -chain.value['score'])
     out = []
     for chain in chains:
-        if inside(start1, end1, chain.data['tStart'],chain.data['tEnd']):
-          if inside(start2, end2, chain.data['tStart'],chain.data['tEnd']):
+        if inside(start1, end1, chain.value['tStart'],chain.value['tEnd']):
+          if inside(start2, end2, chain.value['tStart'],chain.value['tEnd']):
             out.append(chain)
     return(out)
 
@@ -299,16 +254,16 @@ def add_solid_interval(out, read_chr, intervals, this_absolute_start, this_absol
                        this_relative_start, this_relative_end, this_add, target_fasta, 
                        query_fasta, read_seq, tup, read_quality):
 
-    query_chr  = intervals[0].data[0]
+    query_chr  = intervals[0].value[0]
     # grab this section of read from the genome so we can find mismatches
     target_tmp    = target_fasta.fetch(read_chr, this_absolute_start, this_absolute_end).upper()
     
     # the query start is the interval plus the offset
-    offset = abs(intervals[0].begin - this_absolute_start)
+    offset = abs(intervals[0].start - this_absolute_start)
     if (out['is_reverse']):
-        query_start = intervals[0].data[2] - offset - this_add
+        query_start = intervals[0].value[2] - offset - this_add
     else:
-        query_start = intervals[0].data[1] + offset
+        query_start = intervals[0].value[1] + offset
 
     out['segments'].append((query_start,query_start+this_add))
     
@@ -320,13 +275,20 @@ def add_solid_interval(out, read_chr, intervals, this_absolute_start, this_absol
     query_tmp = query_fasta.fetch(query_chr, query_start, query_start+this_add).upper()
     read_add = read_seq[this_relative_start:this_relative_end]
                 
-    query_add  = ''
-    
-    for j in range(len(read_add)):
-        if (target_tmp[j] == read_add[j]):
-            query_add  += query_tmp[j]
-        else:
-            query_add  += read_add[j]
+    query_add  = list(query_tmp)
+    for a,b,j in zip(target_tmp, 
+                     read_add,
+                     range(len(target_tmp))):
+      if a != b:
+        query_add[j]  = read_add[j]
+    query_add = ''.join(query_add)
+
+    #query_add  = ''
+    #for j in range(len(read_add)):
+    #    if (target_tmp[j] == read_add[j]):
+    #        query_add  += query_tmp[j]
+    #    else:
+    #        query_add  += read_add[j]
     
     if out['is_reverse']:
         query_add = revcomp_DNA(query_add)
@@ -344,7 +306,7 @@ def add_gapped_interval(out, read_chr, intervals, this_absolute_start, this_abso
                         this_relative_start, this_relative_end, this_add, target_fasta, 
                         query_fasta, read_seq, tup, read_quality):
 
-    query_chr     = intervals[0].data[0]
+    query_chr     = intervals[0].value[0]
     nintervals    = len(intervals)
     is_reverse    = out['is_reverse']
     new_qualities = array.array('B')
@@ -355,15 +317,15 @@ def add_gapped_interval(out, read_chr, intervals, this_absolute_start, this_abso
     for i in range(nintervals):
         target_ranges.append([])
         query_ranges.append([])
-        target_ranges[i].append(intervals[i].begin)
+        target_ranges[i].append(intervals[i].start)
         target_ranges[i].append(intervals[i].end)
-        query_ranges[i].append(intervals[i].data[1])
-        query_ranges[i].append(intervals[i].data[2]) 
+        query_ranges[i].append(intervals[i].value[1])
+        query_ranges[i].append(intervals[i].value[2]) 
           
     # Now we want to trim the intervals to match the coverage of the read and calculate interval lengths
     
     # trim the first range to the span here
-    offset = abs(this_absolute_start - intervals[0].begin)
+    offset = abs(this_absolute_start - intervals[0].start)
     target_ranges[0][0] += offset
     if is_reverse:
         query_ranges[0][1] -= offset
@@ -418,7 +380,7 @@ def add_gapped_interval(out, read_chr, intervals, this_absolute_start, this_abso
         
     # now we can add to the sequence and qualities for all but the last interval
     for i in range(nintervals-1):
-        add_tmp             = ''
+        #add_tmp             = ''
         tmp_relative_end    = tmp_relative_start+target_ranges[i][2]
     
         target_tmp = target_fasta.fetch(read_chr, target_ranges[i][0], target_ranges[i][1]).upper()
@@ -428,13 +390,21 @@ def add_gapped_interval(out, read_chr, intervals, this_absolute_start, this_abso
         new_qualities += read_quality[tmp_relative_start:tmp_relative_end] 
         last_qual = read_quality[tmp_relative_end]
         
-        for j in range(target_ranges[i][2]):
-            if (target_tmp[j] == read_add[j]):
-                #target_add += target_tmp[j]
-                add_tmp  += query_tmp[j]
-            else:
-                #target_add += read_add[j]
-                add_tmp  += read_add[j]
+        add_tmp  = list(query_tmp)
+        for a,b,j in zip(target_tmp, 
+                         read_add,
+                         range(target_ranges[i][2])):
+          if a != b:
+            add_tmp[j]  = read_add[j]
+        add_tmp = ''.join(add_tmp)
+
+        #for j in range(target_ranges[i][2]):
+        #    if (target_tmp[j] == read_add[j]):
+        #        #target_add += target_tmp[j]
+        #        add_tmp  += query_tmp[j]
+        #    else:
+        #        #target_add += read_add[j]
+        #        add_tmp  += read_add[j]
             
         if is_reverse:
             query_add += revcomp_DNA(add_tmp)
@@ -458,18 +428,26 @@ def add_gapped_interval(out, read_chr, intervals, this_absolute_start, this_abso
     
     # finally add the last interval
     tmp_relative_end    = tmp_relative_start+target_ranges[-1][2]
-    add_tmp    = ''
+    #add_tmp    = ''
     target_tmp = target_fasta.fetch(read_chr, target_ranges[-1][0], target_ranges[-1][1]).upper()
     query_tmp  = query_fasta.fetch(query_chr, query_ranges[-1][0], query_ranges[-1][1]).upper()
-    read_add   = read_seq[tmp_relative_start:tmp_relative_end] # this is where things are wrong!
+    read_add   = read_seq[tmp_relative_start:tmp_relative_end] 
 
-    for j in range(target_ranges[-1][2]):
-        if (target_tmp[j] == read_add[j]):
-            #target_add += target_tmp[j]
-            add_tmp  += query_tmp[j]
-        else:
-            #target_add += read_add[j]
-            add_tmp  += read_add[j]
+    add_tmp  = list(query_tmp)
+    for a,b,j in zip(target_tmp, 
+                     read_add,
+                     range(target_ranges[-1][2])):
+      if a != b:
+        add_tmp[j]  = read_add[j]
+    add_tmp = ''.join(add_tmp)
+        
+    #for j in range(target_ranges[-1][2]):
+    #    if (target_tmp[j] == read_add[j]):
+    #        #target_add += target_tmp[j]
+    #        add_tmp  += query_tmp[j]
+    #    else:
+    #        #target_add += read_add[j]
+    #        add_tmp  += read_add[j]
         
     new_qualities += read_quality[tmp_relative_start:tmp_relative_end] 
 
@@ -496,7 +474,7 @@ def add_gapped_interval(out, read_chr, intervals, this_absolute_start, this_abso
 # 3 = The start or end position of the read is an insertion in target relative to query
 # 4 = There are internal insertions or deletions in the target relative to the query
 
-def liftover_segment(chains, old_alignment, target_fasta, query_fasta, read_chr):
+def liftover_segment(chain, old_alignment, target_fasta, query_fasta, read_chr):
     # we will build a list of possible matches with every chain that covers this read
     # we will then return the one in the end that has the best score
     
@@ -505,108 +483,100 @@ def liftover_segment(chains, old_alignment, target_fasta, query_fasta, read_chr)
     read_quality = old_alignment.query_qualities
     cigar_tuples = old_alignment.cigartuples
    
-    out       = []
+    out       = {}
     intervals = []
-    nchains   = len(chains)
                       
-    this_absolute_start = array.array('I',[read_start]*nchains)
-    this_relative_start = array.array('I',[0]*nchains)
-    for i in range(nchains):
-        out.append({})
-        out[i]['query_sequence']     = ''
-        out[i]['segments']           = []
-        out[i]['query_chrom']        = chains[i].data['qName']
-        out[i]['query_pos']          = None 
-        out[i]['cigartuples']        = []
-        out[i]['qualityscores']      = array.array('B')
-        out[i]['pass']               = True
-        out[i]['is_reverse']         = True if chains[i].data['qStrand'] == "-" else False
-        
-        out[i]['error type']         = 0
-        out[i]['has_indel']          = False
-        out[i]['has_insertion']      = False
-        out[i]['has_deletion']       = False
+    this_absolute_start = read_start
+    this_relative_start = 0
+    
+    out['query_sequence']     = ''
+    out['segments']           = []
+    out['query_chrom']        = chain.value['qName']
+    out['query_pos']          = None 
+    out['cigartuples']        = []
+    out['qualityscores']      = array.array('B')
+    out['pass']               = True
+    out['is_reverse']         = True if chain.value['qStrand'] == "-" else False
+    
+    out['error type']         = 0
+    out['has_indel']          = False
+    out['has_insertion']      = False
+    out['has_deletion']       = False
     
     for tup in cigar_tuples:
         match(tup[0]):
             case (0):
                 this_add = tup[1]
                 
-                for i in range(nchains):
-                    if not out[i]['pass']: continue
+                if not out['pass']: continue
                     
-                    this_absolute_end = this_absolute_start[i] + this_add
-                    this_relative_end = this_relative_start[i] + this_add
+                this_absolute_end = this_absolute_start + this_add
+                this_relative_end = this_relative_start + this_add
                 
-                    #intervals = chains[i].data['mapTree'].find(this_absolute_start[i], this_absolute_end)
-                    intervals = sorted(chains[i].data['mapTree'].overlap(this_absolute_start[i], this_absolute_end))
+                intervals = chain.value['mapTree'].find(this_absolute_start, this_absolute_end)
                     
-                    if (len(intervals) == 0):
-                        out[i]['pass'] = False
-                        out[i]['error type'] = 2
+                if (len(intervals) == 0):
+                    out['pass'] = False
+                    out['error type'] = 2
+                    continue
+                elif (len(intervals) == 1):
+                    # I will require the start and end position of the read to match in the query 
+                    if (intervals[0].start > this_absolute_start or intervals[0].end < this_absolute_end):
+                        out['pass'] = False
+                        out['error type'] = 3
                         continue
-                    elif (len(intervals) == 1):
-                        # I will require the start and end position of the read to match in the query 
-                        if (intervals[0].begin > this_absolute_start[i] or intervals[0].end < this_absolute_end):
-                            out[i]['pass'] = False
-                            out[i]['error type'] = 3
-                            continue
-                        else: # we have a perfect 1:1 matching
-                            out[i], this_absolute_start[i], this_relative_start[i] = add_solid_interval(out[i],
-                                    read_chr, intervals, this_absolute_start[i], this_absolute_end, 
-                                    this_relative_start[i], this_relative_end, this_add, target_fasta, 
-                                    query_fasta, read_seq, tup, read_quality)
-                                                                                                  
-                    else: # we have gaps in the alignment
-                        out[i]['has_indel'] = True
-                        if (intervals[0].begin > this_absolute_start[i] or intervals[-1].end < this_absolute_end):
-                            out[i]['pass'] = False
-                            out[i]['error type'] = 3
-                            continue
-                        else:
-                            out[i], this_absolute_start[i], this_relative_start[i] = add_gapped_interval(out[i],
-                                read_chr, intervals, this_absolute_start[i], this_absolute_end, 
-                                this_relative_start[i], this_relative_end, this_add, target_fasta, 
+                    else: # we have a perfect 1:1 matching
+                        out, this_absolute_start, this_relative_start = add_solid_interval(out,
+                                read_chr, intervals, this_absolute_start, this_absolute_end, 
+                                this_relative_start, this_relative_end, this_add, target_fasta, 
                                 query_fasta, read_seq, tup, read_quality)
+                                                                                                  
+                else: # we have gaps in the alignment
+                    out['has_indel'] = True
+                    if (intervals[0].start > this_absolute_start or intervals[-1].end < this_absolute_end):
+                        out['pass'] = False
+                        out['error type'] = 3
+                        continue
+                    else:
+                        out, this_absolute_start, this_relative_start = add_gapped_interval(out,
+                            read_chr, intervals, this_absolute_start, this_absolute_end, 
+                            this_relative_start, this_relative_end, this_add, target_fasta, 
+                            query_fasta, read_seq, tup, read_quality)
                         
  
             case (1 | 4): # insertion or soft clip. We add these sequences and add to the relative read position but not genomic
-                for i in range(nchains):
-                    if not out[i]['pass']: continue
-
-                    this_add = tup[1]
-                
-                    this_relative_end = this_relative_start[i] + this_add
-        
-                    seq_add  = read_seq[this_relative_start[i]:this_relative_end]
-                    qual_add = read_quality[this_relative_start[i]:this_relative_end]
-
-                    out[i]['query_sequence']  += seq_add
-                    out[i]['cigartuples'].append(tup)
-                    out[i]['qualityscores'].extend(qual_add)
-                    out[i]['segments'].append(None)
-
-                    this_relative_start[i] = this_relative_end
+                if not out['pass']: continue
+                this_add = tup[1]
+                this_relative_end = this_relative_start + this_add
+                seq_add  = read_seq[this_relative_start:this_relative_end]
+                qual_add = read_quality[this_relative_start:this_relative_end]
+                out['query_sequence']  += seq_add
+                out['cigartuples'].append(tup)
+                out['qualityscores'].extend(qual_add)
+                out['segments'].append(None)
+                this_relative_start = this_relative_end
             case (2 | 3): # deletion or skip. Add to genomic position but add no sequence
-                for i in range(nchains):
-                    if not out[i]['pass']: continue
-                    this_add = tup[1]
-                    this_absolute_start[i] += this_add   
-                    out[i]['cigartuples'].append(tup)
-                    out[i]['segments'].append(None)
+                if not out['pass']: continue
+                this_add = tup[1]
+                this_absolute_start += this_add   
+                out['cigartuples'].append(tup)
+                out['segments'].append(None)
             
     
     # update the length of Ns
-    for j in range(nchains):
-        if not out[j]['pass']: continue
-        for i in range(len(out[j]['cigartuples'])):
-            if out[j]['cigartuples'][i][0] == 3:
-                if out[j]['is_reverse']:
-                    out[j]['cigartuples'][i] = (3,out[j]['segments'][i-1][0] - out[j]['segments'][i+1][1])
-                    if out[j]['cigartuples'][i][1] < 0: raise Exception("Splice distance cannot be negative")
+    if out['pass']:
+        if (len(out['query_sequence']) > 500):
+          out['pass'] = False
+          out['error type'] = 2
+        for i in range(len(out['cigartuples'])):
+            if out['cigartuples'][i][0] == 3:
+                if out['is_reverse']:
+                    out['cigartuples'][i] = (3,out['segments'][i-1][0] - out['segments'][i+1][1])
+                    if out['cigartuples'][i][1] < 0: raise Exception("Splice distance cannot be negative")
                 else:
-                    out[j]['cigartuples'][i] = (3,out[j]['segments'][i+1][0] - out[j]['segments'][i-1][1])
-                    if out[j]['cigartuples'][i][1] < 0: raise Exception("Splice distance cannot be negative")
+                    out['cigartuples'][i] = (3,out['segments'][i+1][0] - out['segments'][i-1][1])
+                    if out['cigartuples'][i][1] < 0: raise Exception("Splice distance cannot be negative")
+      
     return out
 
 # There doesnt seem to be a good way of dividing the genome into reasonable chunks. I want a function that 
@@ -643,7 +613,6 @@ def get_genome_chunks(tSizes,n):
                 out.append([])       
     return out
     
-
 def process_se(SAMFILE        = None, 
                outfile        = None, 
                old_header     = None, 
@@ -657,9 +626,9 @@ def process_se(SAMFILE        = None,
                name_to_id     = None,
                best           = None):
     
-    #OUT_FILE_TARGET = pysam.Samfile( outfile_prefix + '.target.bam', "wb", header = old_header)
-    #OUT_FILE_QUERY  = pysam.Samfile( outfile_prefix + '.temp.bam', "wb", header = new_header)
     OUT_FILE_QUERY = outfile
+    
+    new_header = pysam.AlignmentHeader.from_dict(new_header)
     
     index_stats = SAMFILE.get_index_statistics()
     target_contig_list = []
@@ -671,8 +640,6 @@ def process_se(SAMFILE        = None,
 
         nreads += 1
         
-        #if nreads > 100000: break
-        #print(nreads, file=sys.stderr)
         read_chr       = SAMFILE.get_reference_name(old_alignment.reference_id)
         read_start     = old_alignment.reference_start
         read_end       = old_alignment.reference_end
@@ -687,34 +654,32 @@ def process_se(SAMFILE        = None,
             continue
         
         if best: 
-          chains  = chains[:1]
+          chains  = [chains[0]]
           nchains = 1
         
-        out = liftover_segment(chains, old_alignment, target_fasta, query_fasta, read_chr)
-        
-        new_read = out[0]
+        error_type = 0
         for i in range(nchains):
-          if out[i]['pass']:
-            new_read = out[i]
+          new_read = liftover_segment(chains[i], old_alignment, target_fasta, query_fasta, read_chr)
+          
+          if i == 0:
+            error_type = new_read['error type']
+            
+          if new_read['pass']:
+            error_type = new_read['error type']
             break
-  
-        if (new_read['error type'] == 0):
+          
+        if (error_type == 0):
             n0 += 1
-        elif (new_read['error type'] == 2):
+        elif (error_type == 2):
             n2 += 1
             continue
-        elif (new_read['error type'] == 3):
+        elif (error_type == 3):
             n3 += 1
             continue
-        
-        if (len(new_read['query_sequence']) > 500):
-          n2 += 2
-          continue
 
 
         # build the new alignment
-        new_alignment = pysam.AlignedRead(pysam.AlignmentHeader.from_dict(new_header)) # create AlignedRead object
-        #new_alignment = pysam.AlignedRead()
+        new_alignment = pysam.AlignedRead(new_header) # create AlignedRead object
         
         new_alignment.query_name = old_alignment.query_name                
         new_alignment.set_tags(old_alignment.get_tags() )                
@@ -723,7 +688,6 @@ def process_se(SAMFILE        = None,
         new_alignment.next_reference_start = 0
         new_alignment.template_length = 0
         
-        #print(read_chr, new_read['query_chrom'],name_to_id[new_read['query_chrom']])
         new_alignment.reference_id    = name_to_id[new_read['query_chrom']]
         new_alignment.reference_start = new_read['query_pos']
         new_alignment.mapping_quality = old_alignment.mapping_quality
@@ -756,15 +720,9 @@ def process_se(SAMFILE        = None,
         else:
             new_alignment.set_tag("RG", str(rg), rgt)
             
-        #print(old_alignment)
-        #OUT_FILE_TARGET.write(old_alignment)
         OUT_FILE_QUERY.write(new_alignment)
-        
-    #OUT_FILE_TARGET.close()
-    #OUT_FILE_QUERY.close()
     
     return (nreads, n0, n1, n2, n3, n4)
-  
   
 def process_pe(SAMFILE        = None, 
                outfile        = None, 
@@ -779,10 +737,7 @@ def process_pe(SAMFILE        = None,
                name_to_id     = None,
                best           = None):
 
-    #print(old_header)
-    
-    #OUT_FILE_TARGET = pysam.Samfile( outfile_prefix + '.target.bam', "wb", header = old_header)
-    #OUT_FILE_QUERY  = pysam.Samfile( outfile_prefix + '.temp.bam', "wb", header = new_header)
+    new_header = pysam.AlignmentHeader.from_dict(new_header)
     OUT_FILE_QUERY = outfile
     
     index_stats = SAMFILE.get_index_statistics()
@@ -818,43 +773,40 @@ def process_pe(SAMFILE        = None,
         
         chains = get_chains_pe(chr_chains, read1_start, read1_end, read2_start, read2_end)
         nchains = len(chains)
+        
         if (nchains == 0): 
             n1 += 2
             continue
         
         if best: 
-          chains  = chains[:1]
+          chains  = [chains[0]]
           nchains = 1
           
-        out1 = liftover_segment(chains, old1, target_fasta, query_fasta, read1_chr)
-        out2 = liftover_segment(chains, old2, target_fasta, query_fasta, read2_chr)
-        
-        new1 = out1[0]
-        new2 = out2[0]
+        error_type1 = 0
+        error_type2 = 0
         for i in range(nchains):
-          if out1[i]['pass'] and out2[i]['pass']:
-            new1 = out1[i]
-            new2 = out2[i]
+          new1 = liftover_segment(chains[i], old1, target_fasta, query_fasta, read1_chr)
+          new2 = liftover_segment(chains[i], old2, target_fasta, query_fasta, read2_chr)
+        
+          if i == 0:
+            error_type1 = new1['error type']
+            error_type2 = new2['error type']
+          
+          if new1['pass'] and new2['pass']:
+            error_type1 = new1['error type']
+            error_type2 = new2['error type']
             break
-  
-        if (new1['error type'] == 2) or (new2['error type'] == 2):
+
+        if (error_type1 == 2) or (error_type2 == 2):
             n2 += 2
             continue
-        elif (new1['error type'] == 3) or (new2['error type'] == 3):
+        elif (error_type1 == 3) or (error_type2 == 3):
             n3 += 2
             continue
-          
-        if (len(new1['query_sequence']) > 500):
-          n2 += 2
-          continue
-        
-        if (len(new2['query_sequence']) > 500):
-          n2 += 2
-          continue
         
         # build the new alignment
-        new_alignment1 = pysam.AlignedRead(pysam.AlignmentHeader.from_dict(new_header)) # create AlignedRead object
-        new_alignment2 = pysam.AlignedRead(pysam.AlignmentHeader.from_dict(new_header))
+        new_alignment1 = pysam.AlignedRead(new_header) # create AlignedRead object
+        new_alignment2 = pysam.AlignedRead(new_header)
         
         new_alignment1.query_name = old1.query_name                
         new_alignment1.set_tags(old1.get_tags() )                
@@ -957,8 +909,6 @@ def process_pe(SAMFILE        = None,
         new_alignment2.mate_is_unmapped = False
 
         #print(old_alignment)
-        #OUT_FILE_TARGET.write(old1)
-        #OUT_FILE_TARGET.write(old2)
         OUT_FILE_QUERY.write(new_alignment1)
         OUT_FILE_QUERY.write(new_alignment2)
         
