@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 requires-python = ">= 3.10"
-version = "0.1.4"
+version = "0.1.5"
 
 authors = [
   {name = "Kenneth A Barr", email = "kenneth.a.barr@gmail.com"}

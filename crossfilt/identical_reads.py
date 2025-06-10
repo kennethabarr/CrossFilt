@@ -95,22 +95,24 @@ def main():
     file1_total_reads, file1_contigs = get_read_count(SAMFILE1)
     file2_total_reads, file2_contigs = get_read_count(SAMFILE2)
      
+    
     # this will be more efficient if bam2 is the smaller file
     i = matched = 0
     for contig in file1_contigs:
-      for read1, read2 in read_pair_generator(SAMFILE1, SAMFILE2, contig):
-        i += 1
-        if not read1.reference_start == read2.reference_start: continue
-        if not read1.reference_name  == read2.reference_name: continue
-        if not read1.cigarstring     == read2.cigarstring: continue
-        
-        if use_xf:
-          if not read1.has_tag("XF"): continue
-          if not read2.has_tag("XF"): continue
-          if not read1.get_tag("XF") ==  read2.get_tag("XF"): continue
-    
-        matched += 1
-        OUTFILE.write(read1)
+      if contig in file2_contigs:
+        for read1, read2 in read_pair_generator(SAMFILE1, SAMFILE2, contig):
+          i += 1
+          if not read1.reference_start == read2.reference_start: continue
+          if not read1.reference_name  == read2.reference_name: continue
+          if not read1.cigarstring     == read2.cigarstring: continue
+          
+          if use_xf:
+            if not read1.has_tag("XF"): continue
+            if not read2.has_tag("XF"): continue
+            if not read1.get_tag("XF") ==  read2.get_tag("XF"): continue
+      
+          matched += 1
+          OUTFILE.write(read1)
     
     print(str(matched) + ' (' + str(round(100*matched/i,2)) + '%) successfully matched', file=sys.stderr)
   
