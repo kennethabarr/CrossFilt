@@ -10,7 +10,7 @@ The change from v0.1.5 to v0.2.0 includes major changes to the efficiency of cro
 
 Installation can be through pypi or conda/mamba (recommended). 
 
-Install through pypi with 
+Install through [pypi](https://pypi.org/project/crossfilt/) with 
 
 ```
 pip install crossfilt
