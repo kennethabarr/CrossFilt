@@ -10,7 +10,6 @@ import math
 import os
 from collections import defaultdict
 import importlib.metadata
-from line_profiler import profile
 
 __version__ = importlib.metadata.version('crossfilt')
 
@@ -75,7 +74,6 @@ def get_read_count(file):
 
   return total_reads, contig_list
   
-@profile
 def tags_equal(read1, read2, tags):
   for tag in tags:
     if not read1.has_tag(tag): return False
@@ -83,7 +81,6 @@ def tags_equal(read1, read2, tags):
     if not read1.get_tag(tag) ==  read2.get_tag(tag): return False
   return True
   
-@profile
 def main():
   parser = argparse.ArgumentParser(
                       prog='crossfilt-filter',
