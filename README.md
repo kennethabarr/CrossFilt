@@ -2,9 +2,13 @@
 
 CrossFilt is a tool developed to filter reads that cause alignment or annotation bias in cross-species genomic comparisons. We have tested it on RNA-seq and ATAC-seq, but it should be widely applicable to other genomic technologies. This tool works by lifting bam alignments from one species to another. This tool converts any sequence that matches the genome to that of the other species. Then we realign these reads in the other species. Finally, we lift the realigned reads back to the original genome and check which reads return the original coordinates. We only consider these reciprocally mapping reads in genomic comparisons.
 
+## Changes
+
+The change from v0.1.5 to v0.2.0 includes major changes to the efficiency of crossfilt-filter. I have observed speedups of about 5x in some of our problems. I have also included two new flags in crossfilt-filter. The first is the --tag option. This will increase the flexibility of this tool, allowing users to chose different aligners that assign features in a different tag than htseq-count. I have also included an option to run on multiple threads, though note that these are compression/decompression threads and there will be minimal benefit beyond a few threads. 
+
 ## Installation
 
-Installation can be through pypi or conda/mamba (reccomended). 
+Installation can be through pypi or conda/mamba (recommended). 
 
 Install through pypi with 
 
@@ -90,21 +94,24 @@ To decrease run-time we reccomend splitting input bam files into smaller peices.
 ### crossfilt-filter
 
 ```
-usage: crossfilt-filter [-h] [-x] [--version] bam1 bam2
+usage: crossfilt-filter [-h] [-t TAG] [-x] [-@ THREADS] [--version] bam1 bam2
 
-Outputs reads from bam1 that that have identical contig, position, CIGAR string, and XF tag (optional) in bam2
+Outputs reads from bam1 that that have identical contig, position, CIGAR string, and tag values (optional) in bam2
 
 positional arguments:
-  bam1        Input bam files.
-  bam2        Input bam files.
+  bam1                  Input bam file 1.
+  bam2                  Input bam file 2.
 
 options:
-  -h, --help  show this help message and exit
-  -x, --xf    Require identical XF tag
-  --version   show program's version number and exit
+  -h, --help            show this help message and exit
+  -t TAG, --tag TAG     Tag values to compare. Can be specified multiple times to compare multiple tags.
+  -x, --xf              Compare the XF tag. Equivalent to --tag XF
+  -@ THREADS, --threads THREADS
+                        Number of compression/decrpression threads when reading/writing bam files.
+  --version             show program's version number and exit
 ```
 
-Thise tool will check whether the reads in two files are identical according to their chromosome, start position, and CIGAR string. Additionally, if the optional xf flag is included, it will check if the XF tag is identical in two files. The XF tag in a bam file is used by tools like STAR, htseq-count, and 10x cellranger to assign the feature that a read counts towards. 
+This tool will check whether the reads in two files are identical according to their chromosome, start position, and CIGAR string. Additionally, it will check whether the values of tags are identical in two files. For instance, alignments with STAR or counts with htseq-count store the gene that the read counts towards in the XF tag. Cellranger stores this in the GN tag. The --tag option was added in v0.2.0 and the --xf tag was added to preserve reverse-compatibility. 
 
 This tool will run on either position sorted and indexed files or on filtered and name sorted files. If an index file is not provided the tool will proceed under the assumption that reads appear in the exact same order in each file (i.e. both files contain the exact same set of reads and reads are sorted by read name).
 

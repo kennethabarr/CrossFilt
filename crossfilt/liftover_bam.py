@@ -80,6 +80,11 @@ def main():
       if i[0] in tSizes.keys():
         total_reads += i[3]
       
+  if total_reads == 0:
+    print("There were zero reads remaining after filtering out contigs without chains\n", file=sys.stderr)
+    os.remove(tempname)
+    exit()
+    
   end = timer()
   print("Completed in", round(end-start,2), "seconds\n", file=sys.stderr)
   
@@ -123,6 +128,10 @@ def main():
     result = lift.process_se(**kwds)
           
   tempfile.close()
+  if result[1] == 0:
+    print("Zero reads successfully lifted.\n", file=sys.stderr)
+    
+    exit()
   
   end = timer()
   print("Completed in", round(end-start,2), "seconds\n", file=sys.stderr)
