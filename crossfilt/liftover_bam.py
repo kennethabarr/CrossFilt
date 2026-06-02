@@ -7,13 +7,10 @@ output BAM reflects orthologous positions in the query (destination) genome.
 import sys
 import argparse
 import pysam
-import logging
-import array
+import tempfile
 from timeit import default_timer as timer
 from .lib import liftover_functions as lift
-import math
 import os
-from random import randint
 import importlib.metadata
 
 __version__ = importlib.metadata.version('crossfilt')
@@ -85,11 +82,12 @@ def main():
   total_reads = 0
   for i in index_stats:
     if i[3] != 0:
-      if i[0] in tSizes.keys():
+      if i[0] in tSizes:
         total_reads += i[3]
       
   if total_reads == 0:
     print("There were zero reads remaining after filtering out contigs without chains\n", file=sys.stderr)
+    SAMFILE.close(); TARGETFILE.close(); QUERYFILE.close()
     exit()
     
   end = timer()
@@ -114,11 +112,12 @@ def main():
   
   
   
-  tempname = outfile_prefix + '.temp' + str(randint(0,99999)) + '.bam'
-  tempfile = pysam.Samfile(tempname, "wb", header = new_header, threads = args.threads)
+  _fd, tempname = tempfile.mkstemp(suffix='.bam')
+  os.close(_fd)
+  tmp_bam = pysam.Samfile(tempname, "wb", header = new_header, threads = args.threads)
   
-  kwds = {'SAMFILE'        : SAMFILE, 
-          'outfile'        : tempfile, 
+  kwds = {'SAMFILE'        : SAMFILE,
+          'outfile'        : tmp_bam,
           'old_header'     : old_header, 
           'new_header'     : new_header, 
           'target_fasta'   : TARGETFILE, 
@@ -134,10 +133,11 @@ def main():
   else:
     result = lift.process_se(**kwds)
           
-  tempfile.close()
+  tmp_bam.close()
   if result[1] == 0:
     print("Zero reads successfully lifted.\n", file=sys.stderr)
-    
+    os.remove(tempname)
+    SAMFILE.close(); TARGETFILE.close(); QUERYFILE.close()
     exit()
   
   end = timer()

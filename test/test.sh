@@ -10,7 +10,7 @@
 # the reads for those that do not show alignment or annotation bias in a 
 # comparisson between humans and chimpanzees.
 
-set -e
+set -euo pipefail
 SECONDS=0
 
 ############ INPUT FILES #################
@@ -24,6 +24,8 @@ QUERY_GTF=gtfs/chimp.gtf.gz
 TARGET2QUERY=chains/human2chimp.chain.gz
 QUERY2TARGET=chains/chimp2human.chain.gz
 
+THREADS=24
+
 ############ BUILD STAR REFERENCES #################
 
 # In this example I am aligning with STAR. First we need to build the
@@ -32,11 +34,11 @@ QUERY2TARGET=chains/chimp2human.chain.gz
 mkdir -p STARrefs/human STARrefs/chimp
 
 #STAR cant use compressed files, so uncompress first
-gunzip < $TARGET_FA > tmp.fa
-gunzip < $TARGET_GTF > tmp.gtf
+gunzip < "$TARGET_FA" > tmp.fa
+gunzip < "$TARGET_GTF" > tmp.gtf
 
 STAR \
-  --runThreadN 24 \
+  --runThreadN "$THREADS" \
   --runMode genomeGenerate \
   --genomeDir STARrefs/human \
   --genomeFastaFiles tmp.fa \
@@ -46,11 +48,11 @@ STAR \
   --genomeSAindexNbases 11 \
   --readFilesCommand zcat
 
-gunzip < $QUERY_FA > tmp.fa
-gunzip < $QUERY_GTF > tmp.gtf
+gunzip < "$QUERY_FA" > tmp.fa
+gunzip < "$QUERY_GTF" > tmp.gtf
 
 STAR \
-  --runThreadN 24 \
+  --runThreadN "$THREADS" \
   --runMode genomeGenerate \
   --genomeDir STARrefs/chimp \
   --genomeFastaFiles tmp.fa \
@@ -80,7 +82,7 @@ STAR \
 # add the xf tag with ht-seq count
 htseq-count --quiet --stranded=no -a 0 -i gene_name \
   -o tmp_target_alignment/test.counted.bam -p bam \
-  tmp_target_alignment/testAligned.sortedByCoord.out.bam $TARGET_GTF > \
+  tmp_target_alignment/testAligned.sortedByCoord.out.bam "$TARGET_GTF" > \
   tmp_target_alignment/test.counts.txt 
   
 # index this file
@@ -95,9 +97,9 @@ mkdir -p tmp_query_alignment/
 crossfilt-lift \
   -i tmp_target_alignment/test.counted.bam \
   -o tmp_query_alignment/test.lifted \
-  -c $TARGET2QUERY \
-  -t $TARGET_FA \
-  -q $QUERY_FA
+  -c "$TARGET2QUERY" \
+  -t "$TARGET_FA" \
+  -q "$QUERY_FA"
   
 # convert back to fastq
 samtools fastq tmp_query_alignment/test.lifted.bam | gzip > tmp_query_alignment/query.fa.gz
@@ -115,7 +117,7 @@ STAR \
 # add the xf tag with ht-seq count
 htseq-count --quiet --stranded=no -a 0 -i gene_name \
   -o tmp_query_alignment/test.counted.bam -p bam \
-  tmp_query_alignment/queryAligned.sortedByCoord.out.bam $QUERY_GTF > \
+  tmp_query_alignment/queryAligned.sortedByCoord.out.bam "$QUERY_GTF" > \
   tmp_query_alignment/test.counts.txt 
 
 # index this file
@@ -136,9 +138,9 @@ crossfilt-filter \
 crossfilt-lift \
   -i tmp_query_alignment/test.passed.bam \
   -o tmp_target_alignment/test.liftedback \
-  -c $QUERY2TARGET \
-  -t $QUERY_FA \
-  -q $TARGET_FA
+  -c "$QUERY2TARGET" \
+  -t "$QUERY_FA" \
+  -q "$TARGET_FA"
   
 # find reads that lifted back and mapped to the same gene.
 crossfilt-filter --xf \
@@ -184,7 +186,7 @@ STAR \
 # add the xf tag with ht-seq count
 htseq-count --quiet --stranded=no -a 0 -i gene_name \
   -o tmp_target_alignment/test.counted.bam -p bam \
-  tmp_target_alignment/testAligned.sortedByCoord.out.bam $TARGET_GTF > \
+  tmp_target_alignment/testAligned.sortedByCoord.out.bam "$TARGET_GTF" > \
   tmp_target_alignment/test.counts.txt 
   
 # index this file
@@ -200,9 +202,9 @@ mkdir -p tmp_query_alignment/
 crossfilt-lift \
   -i tmp_target_alignment/test.counted.sorted.bam \
   -o tmp_query_alignment/test.lifted \
-  -c $TARGET2QUERY \
-  -t $TARGET_FA \
-  -q $QUERY_FA \
+  -c "$TARGET2QUERY" \
+  -t "$TARGET_FA" \
+  -q "$QUERY_FA" \
   --paired
   
 # convert back to fastq
@@ -225,7 +227,7 @@ STAR \
 # add the xf tag with ht-seq count
 htseq-count --quiet --stranded=no -a 0 -i gene_name \
   -o tmp_query_alignment/test.counted.bam -p bam \
-  tmp_query_alignment/queryAligned.sortedByCoord.out.bam $QUERY_GTF > \
+  tmp_query_alignment/queryAligned.sortedByCoord.out.bam "$QUERY_GTF" > \
   tmp_query_alignment/test.counts.txt 
 
 # index this file
@@ -248,9 +250,9 @@ crossfilt-filter \
 crossfilt-lift \
   -i tmp_query_alignment/test.passed.bam \
   -o tmp_target_alignment/test.liftedback \
-  -c $QUERY2TARGET \
-  -t $QUERY_FA \
-  -q $TARGET_FA \
+  -c "$QUERY2TARGET" \
+  -t "$QUERY_FA" \
+  -q "$TARGET_FA" \
   --paired
   
 # find reads that lifted back and mapped to the same gene.

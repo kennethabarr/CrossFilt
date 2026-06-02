@@ -9,14 +9,16 @@ use these terms.
 import bx.intervals.intersection as bx
 import sys
 import pysam
-import logging
 import array
 import bz2
 import gzip
-import urllib
-from subprocess import Popen
 import math
 from collections import defaultdict
+
+MAX_LIFTED_SEQ_LEN = 500   # reads whose lifted sequence exceeds this are discarded
+MAX_INSERT_SIZE    = 10000  # paired-end pairs whose insert size exceeds this are discarded
+
+_complement_table = str.maketrans('ACGTNXacgtnx', 'TGCANXtgcanx')
 
 def read_pair_generator(bam, region_string=None):
     """
@@ -42,17 +44,12 @@ def read_pair_generator(bam, region_string=None):
     
   
 def nopen(f, mode="rb"):
-    """Open a file path, stdin/stdout, gzip/bzip2, or HTTP URL transparently."""
+    """Open a file path, stdin/stdout, gzip, or bzip2 transparently."""
     if not isinstance(f, str):
         return f
-    if f.startswith("|"):
-        p = Popen(f[1:], stdout=PIPE, stdin=PIPE, shell=True)
-        if mode[0] == "r": return p.stdout
-        return p
     return {"r": sys.stdin, "w": sys.stdout}[mode[0]] if f == "-" \
         else gzip.open(f, mode) if f.endswith((".gz", ".Z", ".z")) \
         else bz2.BZ2File(f, mode) if f.endswith((".bz", ".bz2", ".bzip2")) \
-        else urllib.urlopen(f) if f.startswith(("http://", "https://","ftp://")) \
         else open(f, mode)
 
 def reader(fname):
@@ -88,7 +85,7 @@ def bam_header_generator(orig_header, chrom_size, prog_name, prog_ver, co, forma
     """
     bamHeaderLine=orig_header.copy()
     name2id={}
-    id = 0
+    chrom_id = 0
     # replace 'HD'
     bamHeaderLine['HD'] = {'VN':format_ver,'SO':sort_type}
 
@@ -96,8 +93,8 @@ def bam_header_generator(orig_header, chrom_size, prog_name, prog_ver, co, forma
     tmp=[]
     for ref_name in sorted(chrom_size):
         tmp.append({'LN':chrom_size[ref_name],'SN':ref_name})
-        name2id[ref_name] = id
-        id += 1
+        name2id[ref_name] = chrom_id
+        chrom_id += 1
     bamHeaderLine['SQ'] =  tmp
     if 'PG' in bamHeaderLine:
         bamHeaderLine['PG'] .append( {'ID':prog_name,'VN':prog_ver})
@@ -111,79 +108,10 @@ def bam_header_generator(orig_header, chrom_size, prog_name, prog_ver, co, forma
             bamHeaderLine['CO'] = [comment]
     return (bamHeaderLine, name2id)
 
-complement = {'A':'T','C':'G','G':'C','T':'A','N':'N','X':'X'}
 def revcomp_DNA(dna):
     """Return the reverse complement of a DNA string (supports A/C/G/T/N/X)."""
-    return ''.join([complement[base] for base in reversed(dna)])
+    return dna[::-1].translate(_complement_table)
 
-def read_chain_sizes(chain_file,target_contig_list, query_contig_list):
-    """
-    Read chromosome sizes from a UCSC chain file without loading alignment intervals.
-
-    Parameters
-    ----------
-    chain_file : str
-        Path to a chain file (plain, gzip, or bzip2).
-    target_contig_list : list of str
-        Contigs present in the target (source) genome.
-    query_contig_list : list of str
-        Contigs present in the query (destination) genome.
-
-    Returns
-    -------
-    tuple of (dict, dict)
-        (tSizeDict, qSizeDict) mapping chromosome names to sizes.
-    """
-    chainnames = ["score","tName","tSize","tStrand","tStart","tEnd","qName","qSize","qStrand","qStart","qEnd","id"]
-    last_nfields = 1
-    tSizeDict = {}
-    qSizeDict = {}
-    skip = False
-
-    # Note target is the reference, query is the genome to map to. This terminology is confusing to me
-    # and apparently also the writer of Crossmap, but I will try to be consistent
-    
-    for line in reader(chain_file):
-        
-        if not line.strip(): continue
-        sline=line.strip()
-        if sline.startswith(('#',' ')): continue
-        
-        fields = line.rstrip().split()
-        
-        nfields = len(fields)
-        
-        if fields[0] == 'chain' and nfields in [12, 13]:
-            # convert fields to the appropriate class and remove the 'chain' field
-            fields = [t[0](t[1]) for t in zip([int, str, int, str, int, int, str, int, str, int, int, str], fields[1:])]
-                
-            # convert this to a dictionary
-            this_chain = dict(zip(chainnames, fields))
-            skip = False
-            
-            if this_chain['tName'] not in target_contig_list:
-                skip = True
-                if (this_chain['tName'].find("alt") == -1 and
-                   this_chain['tName'].find("fix") == -1 and
-                   this_chain['tName'].find("chrUn") == -1 and
-                   this_chain['tName'].find("random") == -1):
-                  print("Message: Contig " + this_chain['tName'] + " not in target file. Skipping chain", file=sys.stderr)
-            
-            if this_chain['qName'] not in query_contig_list:
-                skip = True
-                if (this_chain['qName'].find("alt") == -1 and
-                   this_chain['qName'].find("fix") == -1 and
-                   this_chain['qName'].find("chrUn") == -1 and
-                   this_chain['qName'].find("random") == -1):
-                  print("Message: Contig " + this_chain['qName'] + " not in query file. Skipping chain", file=sys.stderr)
-                
-            if skip: continue
-            
-            tSizeDict[this_chain['tName']] = this_chain['tSize']
-            qSizeDict[this_chain['qName']] = this_chain['qSize']
-
-    return (tSizeDict, qSizeDict)
-  
 def read_chain_file(chain_file,target_contig_list, query_contig_list):
     """
     Parse a UCSC chain file into per-chromosome interval trees for fast lookup.
@@ -313,12 +241,9 @@ def get_chains(chr_chains, start, end):
     start, end : int
         Read coordinates in target genome (0-based, half-open).
     """
-    chains = sorted(chr_chains.find(start, end), key=lambda chain: -chain.value['score'])
-    out = []
-    for chain in chains:
-        if inside(start, end, chain.value['tStart'],chain.value['tEnd']):
-            out.append(chain)
-    return(out)
+    out = [c for c in chr_chains.find(start, end)
+           if inside(start, end, c.value['tStart'], c.value['tEnd'])]
+    return sorted(out, key=lambda c: -c.value['score'])
   
 def get_chains_pe(chr_chains, start1, end1, start2, end2):
     """
@@ -326,18 +251,10 @@ def get_chains_pe(chr_chains, start1, end1, start2, end2):
 
     Both reads must be fully enclosed in the same chain for a pair to be lifted.
     """
-    chains = sorted(chr_chains.find(start1, end1), key=lambda chain: -chain.value['score'])
-    out = []
-    for chain in chains:
-        if inside(start1, end1, chain.value['tStart'],chain.value['tEnd']):
-          if inside(start2, end2, chain.value['tStart'],chain.value['tEnd']):
-            out.append(chain)
-    return(out)
-
-def string_ident(str1, str2):
-    """Return the fraction of positions at which str1 and str2 differ."""
-    s = sum(1 for a, b in zip(str1, str2) if a != b)
-    return s/len(str1)
+    out = [c for c in chr_chains.find(start1, end1)
+           if inside(start1, end1, c.value['tStart'], c.value['tEnd'])
+           and inside(start2, end2, c.value['tStart'], c.value['tEnd'])]
+    return sorted(out, key=lambda c: -c.value['score'])
 
 def add_solid_interval(out, read_chr, intervals, this_absolute_start, this_absolute_end,
                        this_relative_start, this_relative_end, this_add, target_fasta,
@@ -378,13 +295,6 @@ def add_solid_interval(out, read_chr, intervals, this_absolute_start, this_absol
         query_add[j]  = read_add[j]
     query_add = ''.join(query_add)
 
-    #query_add  = ''
-    #for j in range(len(read_add)):
-    #    if (target_tmp[j] == read_add[j]):
-    #        query_add  += query_tmp[j]
-    #    else:
-    #        query_add  += read_add[j]
-    
     if out['is_reverse']:
         query_add = revcomp_DNA(query_add)
     
@@ -477,88 +387,58 @@ def add_gapped_interval(out, read_chr, intervals, this_absolute_start, this_abso
         else: 
             insertions.append(query_ranges[i+1][0]-query_ranges[i][1])
 
-    query_add = ''
+    query_parts = []
     tmp_relative_start = this_relative_start
-        
+
     # now we can add to the sequence and qualities for all but the last interval
     for i in range(nintervals-1):
-        #add_tmp             = ''
         tmp_relative_end    = tmp_relative_start+target_ranges[i][2]
-    
+
         target_tmp = target_fasta.fetch(read_chr, target_ranges[i][0], target_ranges[i][1]).upper()
         query_tmp  = query_fasta.fetch(query_chr, query_ranges[i][0], query_ranges[i][1]).upper()
         read_add   = read_seq[tmp_relative_start:tmp_relative_end]
 
-        new_qualities += read_quality[tmp_relative_start:tmp_relative_end] 
+        new_qualities += read_quality[tmp_relative_start:tmp_relative_end]
         last_qual = read_quality[tmp_relative_end]
-        
+
         add_tmp  = list(query_tmp)
-        for a,b,j in zip(target_tmp, 
-                         read_add,
-                         range(target_ranges[i][2])):
-          if a != b:
-            add_tmp[j]  = read_add[j]
+        for a,b,j in zip(target_tmp, read_add, range(target_ranges[i][2])):
+            if a != b:
+                add_tmp[j] = read_add[j]
         add_tmp = ''.join(add_tmp)
 
-        #for j in range(target_ranges[i][2]):
-        #    if (target_tmp[j] == read_add[j]):
-        #        #target_add += target_tmp[j]
-        #        add_tmp  += query_tmp[j]
-        #    else:
-        #        #target_add += read_add[j]
-        #        add_tmp  += read_add[j]
-            
-        if is_reverse:
-            query_add += revcomp_DNA(add_tmp)
-        else:
-            query_add += add_tmp
+        query_parts.append(revcomp_DNA(add_tmp) if is_reverse else add_tmp)
 
         if (insertions[i] > 0):
             out['has_insertion'] = True
             if is_reverse:
-                query_add += revcomp_DNA(query_fasta.fetch(query_chr, query_ranges[i][0]-insertions[i], query_ranges[i][0]).upper())
+                query_parts.append(revcomp_DNA(query_fasta.fetch(query_chr, query_ranges[i][0]-insertions[i], query_ranges[i][0]).upper()))
             else:
-                query_add += query_fasta.fetch(query_chr, query_ranges[i][1], query_ranges[i][1]+insertions[i]).upper()
-                
+                query_parts.append(query_fasta.fetch(query_chr, query_ranges[i][1], query_ranges[i][1]+insertions[i]).upper())
             new_qualities += array.array('B', [last_qual]*insertions[i])
-        
+
         tmp_relative_start += target_ranges[i][2]
-        
+
         if (deletions[i] > 0):
             tmp_relative_start += deletions[i]
             out['has_deletion'] = True
-    
+
     # finally add the last interval
     tmp_relative_end    = tmp_relative_start+target_ranges[-1][2]
-    #add_tmp    = ''
     target_tmp = target_fasta.fetch(read_chr, target_ranges[-1][0], target_ranges[-1][1]).upper()
     query_tmp  = query_fasta.fetch(query_chr, query_ranges[-1][0], query_ranges[-1][1]).upper()
-    read_add   = read_seq[tmp_relative_start:tmp_relative_end] 
+    read_add   = read_seq[tmp_relative_start:tmp_relative_end]
 
     add_tmp  = list(query_tmp)
-    for a,b,j in zip(target_tmp, 
-                     read_add,
-                     range(target_ranges[-1][2])):
-      if a != b:
-        add_tmp[j]  = read_add[j]
+    for a,b,j in zip(target_tmp, read_add, range(target_ranges[-1][2])):
+        if a != b:
+            add_tmp[j] = read_add[j]
     add_tmp = ''.join(add_tmp)
-        
-    #for j in range(target_ranges[-1][2]):
-    #    if (target_tmp[j] == read_add[j]):
-    #        #target_add += target_tmp[j]
-    #        add_tmp  += query_tmp[j]
-    #    else:
-    #        #target_add += read_add[j]
-    #        add_tmp  += read_add[j]
-        
-    new_qualities += read_quality[tmp_relative_start:tmp_relative_end] 
 
-    if is_reverse:
-        query_add += revcomp_DNA(add_tmp)
-    else:
-        query_add += add_tmp
-    
-    out['query_sequence'] += query_add
+    new_qualities += read_quality[tmp_relative_start:tmp_relative_end]
+    query_parts.append(revcomp_DNA(add_tmp) if is_reverse else add_tmp)
+
+    out['query_sequence'] += ''.join(query_parts)
     out['cigartuples'].append((0, query_len))
     out['qualityscores'].extend(new_qualities)
     
@@ -690,7 +570,7 @@ def liftover_segment(chain, old_alignment, target_fasta, query_fasta, read_chr):
     
     # update the length of Ns
     if out['pass']:
-        if (len(out['query_sequence']) > 500):
+        if (len(out['query_sequence']) > MAX_LIFTED_SEQ_LEN):
           out['pass'] = False
           out['error type'] = 2
         for i in range(len(out['cigartuples'])):
@@ -704,55 +584,6 @@ def liftover_segment(chain, old_alignment, target_fasta, query_fasta, read_chr):
       
     return out
 
-# There doesnt seem to be a good way of dividing the genome into reasonable chunks. I want a function that 
-# will divide the genome in to N equal bp chunks
-
-# divide the genome up into equal sized chunks
-def get_genome_chunks(tSizes,n):
-    """
-    Partition the genome into n roughly equal-sized genomic chunks.
-
-    Parameters
-    ----------
-    tSizes : dict
-        Chromosome name → size mapping.
-    n : int
-        Number of chunks to produce.
-
-    Returns
-    -------
-    list of list of tuple
-        Each inner list is one chunk: [(chrom, start, end), ...].
-    """
-    out = []
-    out.append([])
-    
-    # calculate the genome size, and then chunk size
-    gsize = 0
-    for key, value in tSizes.items():
-        gsize += value
-        
-    chunk_size = math.ceil(gsize/n)
-    current_chunk_size = chunk_size
-    i = 0
-    
-    for chrom, size in tSizes.items():
-        cur_pos = 0
-        while (1):
-            next_pos = cur_pos + current_chunk_size
-            if next_pos > size:
-                next_pos = size
-                out[i].append((chrom, cur_pos, next_pos))
-                current_chunk_size -= (next_pos - cur_pos) 
-                break
-            else:
-                out[i].append((chrom, cur_pos, next_pos))
-                current_chunk_size = chunk_size
-                cur_pos = next_pos
-                i += 1
-                out.append([])       
-    return out
-    
 def process_se(SAMFILE        = None,
                outfile        = None,
                old_header     = None,
@@ -797,14 +628,9 @@ def process_se(SAMFILE        = None,
         (total_reads, lifted_ok, no_chain, no_match, boundary_indel, unpaired)
     """
     OUT_FILE_QUERY = outfile
-    
+
     new_header = pysam.AlignmentHeader.from_dict(new_header)
-    
-    index_stats = SAMFILE.get_index_statistics()
-    target_contig_list = []
-    for i in index_stats:
-      if i[3] != 0: target_contig_list.append(i[0])
-      
+
     nreads = n0 = n1 = n2 = n3 = n4 = 0
     for old_alignment in SAMFILE.fetch():
 
@@ -942,21 +768,11 @@ def process_pe(SAMFILE        = None,
     """
     new_header = pysam.AlignmentHeader.from_dict(new_header)
     OUT_FILE_QUERY = outfile
-    
-    index_stats = SAMFILE.get_index_statistics()
-    target_contig_list = []
-    for i in index_stats:
-      if i[3] != 0: target_contig_list.append(i[0])
-    
+
     nreads = n0 = n1 = n2 = n3 = n4 = 0
     for old1, old2 in read_pair_generator(SAMFILE):
-        #print(old1)
-        #print(old2)
-
         nreads += 2
-        
-        #if nreads > 100000: break
-        #print(nreads, file=sys.stderr)
+
         read1_chr       = SAMFILE.get_reference_name(old1.reference_id)
         read1_start     = old1.reference_start
         read1_end       = old1.reference_end
@@ -1090,8 +906,7 @@ def process_pe(SAMFILE        = None,
           new_tlen = new_alignment2.reference_end - new_alignment1.reference_start
           new_alignment1.mate_is_reverse = True
         
-        # get the new insert length, rejecting reads longer than 10kb
-        if (abs(new_tlen) >  10000): 
+        if (abs(new_tlen) > MAX_INSERT_SIZE):
           n4 += 2
           continue
         
@@ -1111,11 +926,7 @@ def process_pe(SAMFILE        = None,
         new_alignment1.mate_is_unmapped = False
         new_alignment2.mate_is_unmapped = False
 
-        #print(old_alignment)
         OUT_FILE_QUERY.write(new_alignment1)
         OUT_FILE_QUERY.write(new_alignment2)
-        
-    #OUT_FILE_TARGET.close()
-    #OUT_FILE_QUERY.close()
-    
+
     return (nreads, n0, n1, n2, n3, n4)

@@ -11,10 +11,7 @@ cross-species genomic comparisons.
 import sys
 import argparse
 import pysam
-import logging
-import array
 from timeit import default_timer as timer
-import math
 import os
 from collections import defaultdict
 import importlib.metadata
@@ -30,7 +27,7 @@ def dict_generator(bam, chrom):
   each time the genomic position advances, so callers can discard outdated
   positions without scanning the entire chromosome.
   """
-  read_dict  = defaultdict()
+  read_dict  = {}
   last_pos = 0
   
   for read in bam.fetch(chrom):
@@ -54,7 +51,10 @@ def read_pair_generator(bam1, bam2, chrom):
   bam2_generator = dict_generator(bam2, chrom)
 
   # dict_pos holds the position in the dictionary
-  dict_pos, read2_dict = next(bam2_generator)
+  try:
+    dict_pos, read2_dict = next(bam2_generator)
+  except StopIteration:
+    return
   
   for read1 in bam1.fetch(chrom):
     
@@ -138,6 +138,7 @@ def main():
     file1_total_reads, file1_contigs = get_read_count(SAMFILE1)
     file2_total_reads, file2_contigs = get_read_count(SAMFILE2)
      
+    file2_contigs = set(file2_contigs)
     matched = 0
     for contig in file1_contigs:
       if contig in file2_contigs:

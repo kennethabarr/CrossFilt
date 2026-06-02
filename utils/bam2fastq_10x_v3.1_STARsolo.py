@@ -69,41 +69,45 @@ R2 = Popen(["gzip"], stdin=PIPE, stdout=R2file, text=True)
 print("Processing reads...", file = sys.stderr)
 start = timer()
 nreads = 0
-for read in SAMFILE.fetch(until_eof = True):
-  nreads += 1
-  if nreads % 50000000 == 0:
-    end = timer()
-    print("Processed " + str(nreads) + 
-      " reads in " + 
-      str(round(end-start,2)) + " seconds", file = sys.stderr)
-      
-  readname = "@" + read.query_name
-  
-  if (read.is_reverse):
-    R2sequence = revcomp_DNA(read.query_sequence)
-    R2quality = pysam.qualities_to_qualitystring(read.query_qualities)[::-1]
-  else:
-    R2sequence = read.query_sequence
-    R2quality = pysam.qualities_to_qualitystring(read.query_qualities)
-  
-  R1sequence = str(read.get_tag("sS")) 
-  R1quality = str(read.get_tag("sQ")) 
-  
-  R1.stdin.write(readname + "\n" +
-    R1sequence      + "\n" +
-    "+"             + "\n" +
-    R1quality       + "\n")
-  
-  R2.stdin.write(readname + "\n" +
-    R2sequence      + "\n" +
-    "+"             + "\n" +
-    R2quality       + "\n")
+try:
+  for read in SAMFILE.fetch(until_eof = True):
+    nreads += 1
+    if nreads % 1000000 == 0:
+      end = timer()
+      print("Processed " + str(nreads) +
+        " reads in " +
+        str(round(end-start,2)) + " seconds", file = sys.stderr)
+
+    readname = "@" + read.query_name
+
+    if (read.is_reverse):
+      R2sequence = revcomp_DNA(read.query_sequence)
+      R2quality = pysam.qualities_to_qualitystring(read.query_qualities)[::-1]
+    else:
+      R2sequence = read.query_sequence
+      R2quality = pysam.qualities_to_qualitystring(read.query_qualities)
+
+    try:
+      R1sequence = str(read.get_tag("sS"))
+      R1quality  = str(read.get_tag("sQ"))
+    except KeyError as e:
+      sys.exit("Error: read " + read.query_name + " is missing tag " + str(e) +
+               ". Is this a STARsolo BAM with sS/sQ tags?")
+
+    R1.stdin.write(readname + "\n" +
+      R1sequence      + "\n" +
+      "+"             + "\n" +
+      R1quality       + "\n")
+
+    R2.stdin.write(readname + "\n" +
+      R2sequence      + "\n" +
+      "+"             + "\n" +
+      R2quality       + "\n")
+finally:
+  R1.stdin.close()
+  R2.stdin.close()
+  R1file.close()
+  R2file.close()
 
 end = timer()
 print("Done in " + str(round(end-start,2)) + " seconds", file = sys.stderr)
-
-R1.stdin.close()
-R2.stdin.close()
-
-R1file.close()
-R2file.close()

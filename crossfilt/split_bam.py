@@ -9,8 +9,6 @@ coordinate-sorted and indexed.
 import sys
 import argparse
 import pysam
-import logging
-import array
 from timeit import default_timer as timer
 import math
 import os
@@ -68,8 +66,7 @@ def main():
   
   SAMFILE     = pysam.AlignmentFile(infile, "rb", threads=threads)
   old_header  = SAMFILE.header.to_dict()
-  bamiter     = SAMFILE.fetch(until_eof=True)
-  
+
   if args.file_size is None:
     total_reads = 0
     
@@ -94,7 +91,7 @@ def main():
   file_iter = 0
   print("Splitting chunk " + str(file_iter),file=sys.stderr)
   
-  this_file = pysam.AlignmentFile(outfile_prefix + "." + str(file_iter) + ".bam", "wb", header = old_header, threads=threads, format_options=['level=1'.encode('utf-8')])
+  this_file = pysam.AlignmentFile(outfile_prefix + "." + str(file_iter) + ".bam", "wb", header = old_header, threads=threads, format_options=['level=0'.encode('utf-8')])
   
   if is_paired:
     for read1, read2 in read_pair_generator(SAMFILE):
@@ -110,7 +107,7 @@ def main():
         chunk_iter = 0
         file_iter += 1
         print("Splitting chunk " + str(file_iter),file=sys.stderr)
-        this_file = pysam.Samfile(outfile_prefix + "." + str(file_iter) + ".bam", "wb", header = old_header, threads = max(round(threads/2), 1), format_options=['level=1'.encode('utf-8')])
+        this_file = pysam.Samfile(outfile_prefix + "." + str(file_iter) + ".bam", "wb", header = old_header, threads = threads, format_options=['level=0'.encode('utf-8')])
   else:
     for read in SAMFILE.fetch(until_eof=True):
       chunk_iter += 1
@@ -123,7 +120,7 @@ def main():
         chunk_iter = 0
         file_iter += 1
         print("Splitting chunk " + str(file_iter),file=sys.stderr)
-        this_file = pysam.Samfile(outfile_prefix + "." + str(file_iter) + ".bam", "wb", header = old_header, threads = threads, format_options=['level=1'.encode('utf-8')])
+        this_file = pysam.Samfile(outfile_prefix + "." + str(file_iter) + ".bam", "wb", header = old_header, threads = threads, format_options=['level=0'.encode('utf-8')])
               
           
   this_file.close()
