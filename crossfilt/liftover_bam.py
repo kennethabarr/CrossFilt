@@ -28,6 +28,7 @@ def main():
   parser.add_argument("-p", "--paired",        required=False, help="Add this flag if the reads are paired", action="store_true")
   parser.add_argument("-b", "--best",          required=False, help="Only attempt to lift using the best chain", action="store_true")
   parser.add_argument("-@", "--threads",       required=False, help="Number of compression/decompression threads when reading/writing bam files.", default=1, type=int)
+  parser.add_argument("--no-seq",             required=False, help="Skip sequence conversion: only update coordinates, orientation, and CIGAR. Keeps the original read sequence and quality scores. Useful when lifting back to the original genome where sequence conversion is not needed.", action="store_true")
   
 
   parser.add_argument('--version', action='version',
@@ -44,8 +45,9 @@ def main():
   chainfile      = args.chain
   target_fasta   = args.target_fasta
   query_fasta    = args.query_fasta
-  is_paired      = args.paired   
+  is_paired      = args.paired
   best           = args.best
+  convert_seq    = not args.no_seq
   
   TARGETFILE  = pysam.Fastafile(target_fasta)
   QUERYFILE   = pysam.Fastafile(query_fasta)
@@ -126,8 +128,9 @@ def main():
           'tSizes'         : tSizes,
           'qSizes'         : qSizes,
           'name_to_id'     : name_to_id,
-          'best'           : best}
-    
+          'best'           : best,
+          'convert_seq'    : convert_seq}
+
   if is_paired:
     result = lift.process_pe(**kwds)
   else:

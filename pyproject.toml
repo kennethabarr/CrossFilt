@@ -12,11 +12,12 @@ keywords = ["comparative genomics", "primate genetics", "alignment bias"]
 
 dependencies = [
   "pysam",
-  "bx-python"
+  "bx-python",
+  "numpy"
 ]
 
 requires-python = ">= 3.10"
-version = "0.2.5"
+version = "0.2.6"
 
 authors = [
   {name = "Kenneth A Barr", email = "kenneth.a.barr@gmail.com"}

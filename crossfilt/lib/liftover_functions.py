@@ -13,6 +13,7 @@ import array
 import bz2
 import gzip
 import math
+import numpy as np
 from collections import defaultdict
 
 MAX_LIFTED_SEQ_LEN = 500   # reads whose lifted sequence exceeds this are discarded
@@ -285,15 +286,13 @@ def add_solid_interval(out, read_chr, intervals, this_absolute_start, this_absol
         out['query_pos'] = min(out['query_pos'], query_start)
                                 
     query_tmp = query_fasta.fetch(query_chr, query_start, query_start+this_add).upper()
-    read_add = read_seq[this_relative_start:this_relative_end]
-                
-    query_add  = list(query_tmp)
-    for a,b,j in zip(target_tmp, 
-                     read_add,
-                     range(len(target_tmp))):
-      if a != b:
-        query_add[j]  = read_add[j]
-    query_add = ''.join(query_add)
+    read_add  = read_seq[this_relative_start:this_relative_end]
+
+    t = np.frombuffer(target_tmp.encode(), dtype=np.uint8)
+    q = np.frombuffer(query_tmp.encode(),  dtype=np.uint8).copy()
+    r = np.frombuffer(read_add.encode(),   dtype=np.uint8)
+    q[t != r] = r[t != r]
+    query_add = q.tobytes().decode()
 
     if out['is_reverse']:
         query_add = revcomp_DNA(query_add)
@@ -401,11 +400,11 @@ def add_gapped_interval(out, read_chr, intervals, this_absolute_start, this_abso
         new_qualities += read_quality[tmp_relative_start:tmp_relative_end]
         last_qual = read_quality[tmp_relative_end]
 
-        add_tmp  = list(query_tmp)
-        for a,b,j in zip(target_tmp, read_add, range(target_ranges[i][2])):
-            if a != b:
-                add_tmp[j] = read_add[j]
-        add_tmp = ''.join(add_tmp)
+        t = np.frombuffer(target_tmp.encode(), dtype=np.uint8)
+        q = np.frombuffer(query_tmp.encode(),  dtype=np.uint8).copy()
+        r = np.frombuffer(read_add.encode(),   dtype=np.uint8)
+        q[t != r] = r[t != r]
+        add_tmp = q.tobytes().decode()
 
         query_parts.append(revcomp_DNA(add_tmp) if is_reverse else add_tmp)
 
@@ -429,11 +428,11 @@ def add_gapped_interval(out, read_chr, intervals, this_absolute_start, this_abso
     query_tmp  = query_fasta.fetch(query_chr, query_ranges[-1][0], query_ranges[-1][1]).upper()
     read_add   = read_seq[tmp_relative_start:tmp_relative_end]
 
-    add_tmp  = list(query_tmp)
-    for a,b,j in zip(target_tmp, read_add, range(target_ranges[-1][2])):
-        if a != b:
-            add_tmp[j] = read_add[j]
-    add_tmp = ''.join(add_tmp)
+    t = np.frombuffer(target_tmp.encode(), dtype=np.uint8)
+    q = np.frombuffer(query_tmp.encode(),  dtype=np.uint8).copy()
+    r = np.frombuffer(read_add.encode(),   dtype=np.uint8)
+    q[t != r] = r[t != r]
+    add_tmp = q.tobytes().decode()
 
     new_qualities += read_quality[tmp_relative_start:tmp_relative_end]
     query_parts.append(revcomp_DNA(add_tmp) if is_reverse else add_tmp)
@@ -456,7 +455,47 @@ def add_gapped_interval(out, read_chr, intervals, this_absolute_start, this_abso
 # 3 = The start or end position of the read is an insertion in target relative to query
 # 4 = There are internal insertions or deletions in the target relative to the query
 
-def liftover_segment(chain, old_alignment, target_fasta, query_fasta, read_chr):
+def _coords_only_gapped_interval(out, intervals, this_absolute_start, this_absolute_end, this_add):
+    """
+    Compute lifted coordinates for a gapped interval without any FASTA access.
+
+    Used by liftover_segment when convert_seq=False. Updates out['segments'],
+    out['query_pos'], and out['cigartuples'] only.
+    """
+    is_reverse = out['is_reverse']
+    t_starts = [iv.start      for iv in intervals]
+    t_ends   = [iv.end        for iv in intervals]
+    q_starts = [iv.value[1]   for iv in intervals]
+    q_ends   = [iv.value[2]   for iv in intervals]
+
+    # trim first and last intervals to the read boundaries
+    offset = abs(this_absolute_start - intervals[0].start)
+    t_starts[0] += offset
+    if is_reverse: q_ends[0]    -= offset
+    else:          q_starts[0]  += offset
+
+    offset = abs(this_absolute_end - intervals[-1].end)
+    t_ends[-1] -= offset
+    if is_reverse: q_starts[-1] += offset
+    else:          q_ends[-1]   -= offset
+
+    if is_reverse:
+        query_start = q_starts[-1]
+        query_end   = q_ends[0]
+    else:
+        query_start = q_starts[0]
+        query_end   = q_ends[-1]
+
+    out['segments'].append((query_start, query_end))
+    out['query_pos'] = query_start if out['query_pos'] is None else min(out['query_pos'], query_start)
+    out['cigartuples'].append((0, query_end - query_start))
+    out['has_indel'] = True
+
+    return out, this_absolute_start + this_add
+
+
+def liftover_segment(chain, old_alignment, target_fasta, query_fasta, read_chr,
+                     convert_seq=True):
     """
     Convert a single BAM alignment from target to query genome coordinates.
 
@@ -484,8 +523,8 @@ def liftover_segment(chain, old_alignment, target_fasta, query_fasta, read_chr):
         'query_pos', 'cigartuples', 'qualityscores', 'is_reverse'.
     """
     read_start   = old_alignment.reference_start
-    read_seq     = old_alignment.query_sequence
-    read_quality = old_alignment.query_qualities
+    read_seq     = old_alignment.query_sequence     # only used when convert_seq=True
+    read_quality = old_alignment.query_qualities    # only used when convert_seq=True
     cigar_tuples = old_alignment.cigartuples
    
     out       = {}
@@ -525,39 +564,53 @@ def liftover_segment(chain, old_alignment, target_fasta, query_fasta, read_chr):
                     out['error type'] = 2
                     continue
                 elif (len(intervals) == 1):
-                    # I will require the start and end position of the read to match in the query 
+                    # I will require the start and end position of the read to match in the query
                     if (intervals[0].start > this_absolute_start or intervals[0].end < this_absolute_end):
                         out['pass'] = False
                         out['error type'] = 3
                         continue
-                    else: # we have a perfect 1:1 matching
+                    elif convert_seq:
                         out, this_absolute_start, this_relative_start = add_solid_interval(out,
-                                read_chr, intervals, this_absolute_start, this_absolute_end, 
-                                this_relative_start, this_relative_end, this_add, target_fasta, 
+                                read_chr, intervals, this_absolute_start, this_absolute_end,
+                                this_relative_start, this_relative_end, this_add, target_fasta,
                                 query_fasta, read_seq, tup, read_quality)
-                                                                                                  
+                    else:
+                        # coordinate-only: compute query position without FASTA access
+                        offset = abs(intervals[0].start - this_absolute_start)
+                        query_start = (intervals[0].value[2] - offset - this_add if out['is_reverse']
+                                       else intervals[0].value[1] + offset)
+                        out['segments'].append((query_start, query_start + this_add))
+                        out['query_pos'] = (query_start if out['query_pos'] is None
+                                            else min(out['query_pos'], query_start))
+                        out['cigartuples'].append(tup)
+                        this_absolute_start += this_add
+                        this_relative_start += this_add
+
                 else: # we have gaps in the alignment
                     out['has_indel'] = True
                     if (intervals[0].start > this_absolute_start or intervals[-1].end < this_absolute_end):
                         out['pass'] = False
                         out['error type'] = 3
                         continue
-                    else:
+                    elif convert_seq:
                         out, this_absolute_start, this_relative_start = add_gapped_interval(out,
-                            read_chr, intervals, this_absolute_start, this_absolute_end, 
-                            this_relative_start, this_relative_end, this_add, target_fasta, 
+                            read_chr, intervals, this_absolute_start, this_absolute_end,
+                            this_relative_start, this_relative_end, this_add, target_fasta,
                             query_fasta, read_seq, tup, read_quality)
+                    else:
+                        out, this_absolute_start = _coords_only_gapped_interval(
+                            out, intervals, this_absolute_start, this_absolute_end, this_add)
+                        this_relative_start += this_add
                         
  
-            case (1 | 4): # insertion or soft clip. We add these sequences and add to the relative read position but not genomic
+            case (1 | 4): # insertion or soft clip. Advance relative position; build seq only if convert_seq
                 if not out['pass']: continue
                 this_add = tup[1]
                 this_relative_end = this_relative_start + this_add
-                seq_add  = read_seq[this_relative_start:this_relative_end]
-                qual_add = read_quality[this_relative_start:this_relative_end]
-                out['query_sequence']  += seq_add
+                if convert_seq:
+                    out['query_sequence'] += read_seq[this_relative_start:this_relative_end]
+                    out['qualityscores'].extend(read_quality[this_relative_start:this_relative_end])
                 out['cigartuples'].append(tup)
-                out['qualityscores'].extend(qual_add)
                 out['segments'].append(None)
                 this_relative_start = this_relative_end
             case (2 | 3): # deletion or skip. Add to genomic position but add no sequence
@@ -570,7 +623,7 @@ def liftover_segment(chain, old_alignment, target_fasta, query_fasta, read_chr):
     
     # update the length of Ns
     if out['pass']:
-        if (len(out['query_sequence']) > MAX_LIFTED_SEQ_LEN):
+        if convert_seq and (len(out['query_sequence']) > MAX_LIFTED_SEQ_LEN):
           out['pass'] = False
           out['error type'] = 2
         for i in range(len(out['cigartuples'])):
@@ -584,12 +637,16 @@ def liftover_segment(chain, old_alignment, target_fasta, query_fasta, read_chr):
       
     return out
 
-def _build_lifted_alignment(new_header, old_alignment, new_read, name_to_id):
+def _build_lifted_alignment(new_header, old_alignment, new_read, name_to_id,
+                             convert_seq=True):
     """
     Construct a pysam AlignedRead in the query genome from a liftover result.
 
     Copies query name and tags from old_alignment, sets coordinates from
     new_read, handles strand reversal, and preserves the RG tag.
+
+    When convert_seq=False the original sequence and quality scores are kept
+    (only coordinates, orientation flag, and CIGAR are updated).
     """
     aln = pysam.AlignedRead(new_header)
 
@@ -608,14 +665,25 @@ def _build_lifted_alignment(new_header, old_alignment, new_read, name_to_id):
     if old_alignment.is_reverse != new_read['is_reverse']:
         aln.flag = aln.flag | 0x10
 
-    if new_read['is_reverse']:
-        aln.query_sequence  = revcomp_DNA(new_read['query_sequence'])
-        aln.query_qualities = new_read['qualityscores'][::-1]
-        aln.cigartuples     = new_read['cigartuples'][::-1]
+    if convert_seq:
+        if new_read['is_reverse']:
+            aln.query_sequence  = revcomp_DNA(new_read['query_sequence'])
+            aln.query_qualities = new_read['qualityscores'][::-1]
+            aln.cigartuples     = new_read['cigartuples'][::-1]
+        else:
+            aln.query_sequence  = new_read['query_sequence']
+            aln.query_qualities = new_read['qualityscores']
+            aln.cigartuples     = new_read['cigartuples']
     else:
-        aln.query_sequence  = new_read['query_sequence']
-        aln.query_qualities = new_read['qualityscores']
-        aln.cigartuples     = new_read['cigartuples']
+        # keep original sequence; revcomp only if strand flipped
+        if new_read['is_reverse'] != old_alignment.is_reverse:
+            aln.query_sequence  = revcomp_DNA(old_alignment.query_sequence)
+            aln.query_qualities = old_alignment.query_qualities[::-1]
+        else:
+            aln.query_sequence  = old_alignment.query_sequence
+            aln.query_qualities = old_alignment.query_qualities
+        aln.cigartuples = (new_read['cigartuples'][::-1] if new_read['is_reverse']
+                           else new_read['cigartuples'])
 
     try:
         rg, rgt = old_alignment.get_tag("RG", with_value_type=True)
@@ -638,7 +706,8 @@ def process_se(SAMFILE        = None,
                qSizes         = None,
                chainfile      = None,
                name_to_id     = None,
-               best           = None):
+               best           = None,
+               convert_seq    = True):
     """
     Lift all single-end reads in SAMFILE to the query genome and write to outfile.
 
@@ -698,7 +767,8 @@ def process_se(SAMFILE        = None,
         
         error_type = 0
         for i in range(nchains):
-          new_read = liftover_segment(chains[i], old_alignment, target_fasta, query_fasta, read_chr)
+          new_read = liftover_segment(chains[i], old_alignment, target_fasta, query_fasta, read_chr,
+                                       convert_seq=convert_seq)
           
           if i == 0:
             error_type = new_read['error type']
@@ -717,7 +787,8 @@ def process_se(SAMFILE        = None,
             continue
 
 
-        OUT_FILE_QUERY.write(_build_lifted_alignment(new_header, old_alignment, new_read, name_to_id))
+        OUT_FILE_QUERY.write(_build_lifted_alignment(new_header, old_alignment, new_read, name_to_id,
+                                                      convert_seq=convert_seq))
     
     return (nreads, n0, n1, n2, n3, n4)
   
@@ -732,7 +803,8 @@ def process_pe(SAMFILE        = None,
                qSizes         = None,
                chainfile      = None,
                name_to_id     = None,
-               best           = None):
+               best           = None,
+               convert_seq    = True):
     """
     Lift all paired-end reads in SAMFILE to the query genome and write to outfile.
 
@@ -805,8 +877,10 @@ def process_pe(SAMFILE        = None,
         error_type1 = 0
         error_type2 = 0
         for i in range(nchains):
-          new1 = liftover_segment(chains[i], old1, target_fasta, query_fasta, read1_chr)
-          new2 = liftover_segment(chains[i], old2, target_fasta, query_fasta, read2_chr)
+          new1 = liftover_segment(chains[i], old1, target_fasta, query_fasta, read1_chr,
+                                   convert_seq=convert_seq)
+          new2 = liftover_segment(chains[i], old2, target_fasta, query_fasta, read2_chr,
+                                   convert_seq=convert_seq)
         
           if i == 0:
             error_type1 = new1['error type']
@@ -824,8 +898,10 @@ def process_pe(SAMFILE        = None,
             n3 += 2
             continue
         
-        new_alignment1 = _build_lifted_alignment(new_header, old1, new1, name_to_id)
-        new_alignment2 = _build_lifted_alignment(new_header, old2, new2, name_to_id)
+        new_alignment1 = _build_lifted_alignment(new_header, old1, new1, name_to_id,
+                                                  convert_seq=convert_seq)
+        new_alignment2 = _build_lifted_alignment(new_header, old2, new2, name_to_id,
+                                                  convert_seq=convert_seq)
 
         # make sure forward and reverse orientation are preserved
         if new_alignment1.is_reverse == new_alignment2.is_reverse:
