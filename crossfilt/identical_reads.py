@@ -1,4 +1,12 @@
 #!/usr/bin/python3
+"""
+crossfilt-filter: Output reads from bam1 whose alignment matches bam2.
+
+A read passes if it has the same contig, position, and CIGAR string in both
+files. Additional tag comparisons (e.g. XF from htseq-count) can be required
+via --tag / --xf. Used to remove alignment- and annotation-biased reads in
+cross-species genomic comparisons.
+"""
 
 import sys
 import argparse
@@ -14,10 +22,14 @@ import importlib.metadata
 __version__ = importlib.metadata.version('crossfilt')
 
 
-# iterate through a bam file base-by-base and return a 
-# dictionary of reads at that position.
-def dict_generator(bam, chrom): 
+def dict_generator(bam, chrom):
+  """
+  Yield (position, read_dict) pairs walking forward through a chromosome.
 
+  read_dict maps query_name+is_read1 to the pysam read. A new dict is emitted
+  each time the genomic position advances, so callers can discard outdated
+  positions without scanning the entire chromosome.
+  """
   read_dict  = defaultdict()
   last_pos = 0
   
@@ -32,12 +44,15 @@ def dict_generator(bam, chrom):
   yield last_pos, read_dict
 
   
-# Read through two position-sorted bam files and return reads that have the
-# same chromosome, position, and pair mate (read1/2)
 def read_pair_generator(bam1, bam2, chrom):
-    
+  """
+  Yield (read1, read2) pairs with identical chromosome, position, and read-mate identity.
+
+  Advances a sliding window through bam2 via dict_generator so that only
+  one position's reads are held in memory at a time.
+  """
   bam2_generator = dict_generator(bam2, chrom)
-  
+
   # dict_pos holds the position in the dictionary
   dict_pos, read2_dict = next(bam2_generator)
   
@@ -63,6 +78,7 @@ def read_pair_generator(bam1, bam2, chrom):
      yield read1, read2_dict[read1_id]
         
 def get_read_count(file):
+  """Return (total_mapped_reads, list_of_non_empty_contigs) from the BAM index."""
   contig_list = []
   total_reads = 0
   index_stats = file.get_index_statistics()
@@ -75,6 +91,7 @@ def get_read_count(file):
   return total_reads, contig_list
   
 def tags_equal(read1, read2, tags):
+  """Return True if read1 and read2 have identical values for every tag in tags."""
   for tag in tags:
     if not read1.has_tag(tag): return False
     if not read2.has_tag(tag): return False
@@ -84,11 +101,11 @@ def tags_equal(read1, read2, tags):
 def main():
   parser = argparse.ArgumentParser(
                       prog='crossfilt-filter',
-                      description='Outputs reads from bam1 that that have identical contig, position, CIGAR string, and tag values (optional) in bam2')
+                      description='Outputs reads from bam1 that have identical contig, position, CIGAR string, and tag values (optional) in bam2')
   
   parser.add_argument("-t", "--tag",     required=False, help="Tag values to compare. Can be specified multiple times to compare multiple tags.", default=[], action="append")
   parser.add_argument("-x", "--xf",      required=False, help="Compare the XF tag. Equivalent to --tag XF", action="store_true")
-  parser.add_argument("-@", "--threads", required=False, help="Number of compression/decrpression threads when reading/writing bam files.", default=1, type=int)
+  parser.add_argument("-@", "--threads", required=False, help="Number of compression/decompression threads when reading/writing bam files.", default=1, type=int)
   parser.add_argument("bam1", help="Input bam file 1.")
   parser.add_argument("bam2", help="Input bam file 2.")
   parser.add_argument('--version', action='version',

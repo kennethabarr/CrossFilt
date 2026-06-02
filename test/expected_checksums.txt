@@ -1,0 +1,4 @@
+# Expected md5sums of BAM read content (samtools view, no header) for the test pipeline outputs.
+# Regenerate with: samtools view <file> | md5sum
+491558323726da049d99b10cb82937ab  test_paired.filtered.bam
+85a8d3c6ed3cdd9be659c4aa6bfb6f4c  test.filtered.bam

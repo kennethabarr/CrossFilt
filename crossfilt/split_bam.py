@@ -1,4 +1,10 @@
 #!/usr/bin/python3
+"""
+crossfilt-split: Split a coordinate-sorted BAM file into equal-sized chunks.
+
+Keeps paired reads together when --paired is set. Each output chunk is
+coordinate-sorted and indexed.
+"""
 
 import sys
 import argparse
@@ -43,7 +49,7 @@ def main():
   
   parser.add_argument("-i", "--input",         required=True,  help="The input BAM file to split")
   parser.add_argument("-o", "--output",        required=True,  help="Prefix for the output files")
-  parser.add_argument("-n", "--ncpu",          required=False, type=int, default=1, help="The number of CPU cores to use")
+  parser.add_argument("-@", "--threads",       required=False, type=int, default=1, help="Number of compression/decompression threads when reading/writing bam files.")
   parser.add_argument("-p", "--paired",        required=False, help="Add this flag if the reads are paired", action="store_true")
   
   group = parser.add_mutually_exclusive_group(required=True)
@@ -57,10 +63,10 @@ def main():
   
   infile         = args.input
   outfile_prefix = args.output
-  ncpu           = args.ncpu
+  threads        = args.threads
   is_paired      = args.paired
   
-  SAMFILE     = pysam.AlignmentFile(infile, "rb", threads=ncpu)
+  SAMFILE     = pysam.AlignmentFile(infile, "rb", threads=threads)
   old_header  = SAMFILE.header.to_dict()
   bamiter     = SAMFILE.fetch(until_eof=True)
   
@@ -88,7 +94,7 @@ def main():
   file_iter = 0
   print("Splitting chunk " + str(file_iter),file=sys.stderr)
   
-  this_file = pysam.Samfile(outfile_prefix + "." + str(file_iter) + ".bam", "wb", header = old_header, threads=ncpu)
+  this_file = pysam.AlignmentFile(outfile_prefix + "." + str(file_iter) + ".bam", "wb", header = old_header, threads=threads, format_options=['level=1'.encode('utf-8')])
   
   if is_paired:
     for read1, read2 in read_pair_generator(SAMFILE):
@@ -98,30 +104,30 @@ def main():
       this_file.write(read2)
       if chunk_iter >= chunk_size:
         this_file.close()
-        pysam.sort("-@", str(ncpu), "-o", outfile_prefix + ".sorted." + str(file_iter) + ".bam", outfile_prefix + "." + str(file_iter) + ".bam")
+        pysam.sort("-@", str(threads), "-o", outfile_prefix + ".sorted." + str(file_iter) + ".bam", outfile_prefix + "." + str(file_iter) + ".bam")
         pysam.index(outfile_prefix + ".sorted." + str(file_iter) + ".bam")
         os.remove(outfile_prefix + "." + str(file_iter) + ".bam")
         chunk_iter = 0
         file_iter += 1
         print("Splitting chunk " + str(file_iter),file=sys.stderr)
-        this_file = pysam.Samfile(outfile_prefix + ".input." + str(file_iter) + ".bam", "wb", header = old_header, threads = max(round(ncpu/2), 1))
+        this_file = pysam.Samfile(outfile_prefix + ".input." + str(file_iter) + ".bam", "wb", header = old_header, threads = max(round(threads/2), 1), format_options=['level=1'.encode('utf-8')])
   else:
     for read in SAMFILE.fetch(until_eof=True):
       chunk_iter += 1
       this_file.write(read)
       if chunk_iter >= chunk_size:
         this_file.close()
-        pysam.sort("-@", str(ncpu), "-o", outfile_prefix + ".sorted." + str(file_iter) + ".bam", outfile_prefix + "." + str(file_iter) + ".bam")
+        pysam.sort("-@", str(threads), "-o", outfile_prefix + ".sorted." + str(file_iter) + ".bam", outfile_prefix + "." + str(file_iter) + ".bam")
         pysam.index(outfile_prefix + ".sorted." + str(file_iter) + ".bam")
         os.remove(outfile_prefix + "." + str(file_iter) + ".bam")
         chunk_iter = 0
         file_iter += 1
         print("Splitting chunk " + str(file_iter),file=sys.stderr)
-        this_file = pysam.Samfile(outfile_prefix + "." + str(file_iter) + ".bam", "wb", header = old_header, threads = ncpu)
+        this_file = pysam.Samfile(outfile_prefix + "." + str(file_iter) + ".bam", "wb", header = old_header, threads = threads, format_options=['level=1'.encode('utf-8')])
               
           
   this_file.close()
-  pysam.sort("-@", str(ncpu), "-o", outfile_prefix + ".sorted." + str(file_iter) + ".bam", outfile_prefix + "." + str(file_iter) + ".bam")
+  pysam.sort("-@", str(threads), "-o", outfile_prefix + ".sorted." + str(file_iter) + ".bam", outfile_prefix + "." + str(file_iter) + ".bam")
   pysam.index(outfile_prefix + ".sorted." + str(file_iter) + ".bam")
   os.remove(outfile_prefix + "." + str(file_iter) + ".bam")
   SAMFILE.close()

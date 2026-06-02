@@ -4,7 +4,7 @@ CrossFilt is a tool developed to filter reads that cause alignment or annotation
 
 ## Changes
 
-The change from v0.1.5 to v0.2.0 includes major changes to the efficiency of crossfilt-filter. I have observed speedups of about 5x in some of our problems. I have also included two new flags in crossfilt-filter. The first is the --tag option. This will increase the flexibility of this tool, allowing users to chose different aligners that assign features in a different tag than htseq-count. I have also included an option to run on multiple threads, though note that these are compression/decompression threads and there will be minimal benefit beyond a few threads. 
+The change from v0.1.5 to v0.2.0 includes major changes to the efficiency of crossfilt-filter. I have observed speedups of about 5x in some of our problems. I have also included two new flags in crossfilt-filter. The first is the --tag option. This will increase the flexibility of this tool, allowing users to choose different aligners that assign features in a different tag than htseq-count. I have also included an option to run on multiple threads, though note that these are compression/decompression threads and there will be minimal benefit beyond a few threads.
 
 ## Installation
 
@@ -24,7 +24,7 @@ conda install bioconda::crossfilt
 
 This will create three scripts for implementing our method: crossfilt-lift, crossfilt-filter and crossfilt-split. 
 
-We have included a test script and input files to verify that your installation is working corretly. This also serves as an example of how to run this pipeline to get filtered, unbiased reads for cross-species comparisons. This test will require STAR, htseq-count, and samtools. To run the test, clone this repository, navigate to the test directory and run
+We have included a test script and input files to verify that your installation is working correctly. This also serves as an example of how to run this pipeline to get filtered, unbiased reads for cross-species comparisons. This test will require STAR, htseq-count, and samtools. To run the test, clone this repository, navigate to the test directory and run
 
 ```
 conda create -n crossfilt bioconda::crossfilt bioconda::star bioconda::samtools bioconda::htseq
@@ -39,9 +39,9 @@ This script will lift a set ~500k human chr22 reads to and then from the chimpan
 ### crossfilt-lift
 
 ```
-usage: crossfilt-lift [-h] -i INPUT -o OUTPUT -c CHAIN -t TARGET_FASTA -q QUERY_FASTA [-p] [-b] [--version]
+usage: crossfilt-lift [-h] -i INPUT -o OUTPUT -c CHAIN -t TARGET_FASTA -q QUERY_FASTA [-p] [-b] [-@ THREADS] [--version]
 
-Converts genome coordinates and nucleotide sequence for othologous segments in a BAM file
+Converts genome coordinates and nucleotide sequence for orthologous segments in a BAM file
 
 options:
   -h, --help            show this help message and exit
@@ -57,6 +57,8 @@ options:
                         The genomic sequence of the query (the species we are converting to)
   -p, --paired          Add this flag if the reads are paired
   -b, --best            Only attempt to lift using the best chain
+  -@ THREADS, --threads THREADS
+                        Number of compression/decompression threads when reading/writing bam files.
   --version             show program's version number and exit
 ```
 
@@ -64,12 +66,12 @@ This tool will lift reads from the target genome to the query genome using the p
 
 By default, if a read fails to lift on the best chain, this tool will proceed to the next best chain and try again. It will continue trying for all chains. A user can override this behavior with the `--best` flag, in which case the tool will only attempt to lift using the best chain. In our experience with primates this decreases the number of reads that successfully lift by about 5%, while decreasing the time it takes to run the tool by about 10%. 
 
-In our hands, this tool takes about 2-3 minutes per 1M reads and for most human chain files it requires about 3GB of RAM. For large experiments this may be computationally expensive and we reccomend splitting the bam into smaller peices. The program will only store chains for chromosomes present in the bam file, so the memory requirements will decrease significantly when the bam file is split. For single-end reads you may split the bam file any way you like, but for paired-end reads it is essential that both ends are present in the same file. For that reason we have provided a tool split_bam.py that will split a file into equal sized peices. 
+In our hands, this tool takes about 2-3 minutes per 1M reads and for most human chain files it requires about 3GB of RAM. For large experiments this may be computationally expensive and we recommend splitting the bam into smaller pieces. The program will only store chains for chromosomes present in the bam file, so the memory requirements will decrease significantly when the bam file is split. For single-end reads you may split the bam file any way you like, but for paired-end reads it is essential that both ends are present in the same file. For that reason we have provided a tool `crossfilt-split` that will split a file into equal sized pieces. 
 
 ### crossfilt-split
 
 ```
-usage: crossfilt-split [-h] -i INPUT -o OUTPUT [-n NCPU] [-p] (-f NFILES | -s FILE_SIZE) [--version]
+usage: crossfilt-split [-h] -i INPUT -o OUTPUT [-@ THREADS] [-p] (-f NFILES | -s FILE_SIZE) [--version]
 
 Splits a bam file into equal sized chunks, keeping paired reads together. This may return fewer files than expected if
 many reads are missing a pair.
@@ -80,7 +82,8 @@ options:
                         The input BAM file to split
   -o OUTPUT, --output OUTPUT
                         Prefix for the output files
-  -n NCPU, --ncpu NCPU  The number of CPU cores to use
+  -@ THREADS, --threads THREADS
+                        Number of compression/decompression threads when reading/writing bam files.
   -p, --paired          Add this flag if the reads are paired
   -f NFILES, --nfiles NFILES
                         The number of files to split this into
@@ -89,14 +92,14 @@ options:
   --version             show program's version number and exit
 ```
 
-To decrease run-time we reccomend splitting input bam files into smaller peices. The user can specify either the number of reads per file with FILE_SIZE or the number of files to split into with NFILES. If reads are paired, it will ensure that both ends are kept in the same file. The tool will compute the number of files needed based on the total reads present in the index, but if reads are paired and many reads dont have a mate present in the file then it is possible that it will produce fewer files than specified. The number of CPUs passed to pysam for I/O and sorting can be changed with NCPU. 
+To decrease run-time we recommend splitting input bam files into smaller pieces. The user can specify either the number of reads per file with FILE_SIZE or the number of files to split into with NFILES. If reads are paired, it will ensure that both ends are kept in the same file. The tool will compute the number of files needed based on the total reads present in the index, but if reads are paired and many reads don't have a mate present in the file then it is possible that it will produce fewer files than specified. The number of compression/decompression threads passed to pysam for I/O and sorting can be changed with `--threads`. 
 
 ### crossfilt-filter
 
 ```
 usage: crossfilt-filter [-h] [-t TAG] [-x] [-@ THREADS] [--version] bam1 bam2
 
-Outputs reads from bam1 that that have identical contig, position, CIGAR string, and tag values (optional) in bam2
+Outputs reads from bam1 that have identical contig, position, CIGAR string, and tag values (optional) in bam2
 
 positional arguments:
   bam1                  Input bam file 1.
@@ -107,7 +110,7 @@ options:
   -t TAG, --tag TAG     Tag values to compare. Can be specified multiple times to compare multiple tags.
   -x, --xf              Compare the XF tag. Equivalent to --tag XF
   -@ THREADS, --threads THREADS
-                        Number of compression/decrpression threads when reading/writing bam files.
+                        Number of compression/decompression threads when reading/writing bam files.
   --version             show program's version number and exit
 ```
 

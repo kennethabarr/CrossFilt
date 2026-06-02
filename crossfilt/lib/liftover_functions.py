@@ -1,3 +1,11 @@
+"""
+Core functions for lifting BAM alignments between genomes using UCSC chain files.
+
+Terminology used throughout: "target" is the source genome (reads are currently
+aligned to it); "query" is the destination genome (reads will be lifted to it).
+This follows UCSC chain file convention, which is the inverse of how many tools
+use these terms.
+"""
 import bx.intervals.intersection as bx
 import sys
 import pysam
@@ -34,6 +42,7 @@ def read_pair_generator(bam, region_string=None):
     
   
 def nopen(f, mode="rb"):
+    """Open a file path, stdin/stdout, gzip/bzip2, or HTTP URL transparently."""
     if not isinstance(f, str):
         return f
     if f.startswith("|"):
@@ -47,13 +56,36 @@ def nopen(f, mode="rb"):
         else open(f, mode)
 
 def reader(fname):
+    """Yield decoded and stripped text lines from any source supported by nopen."""
     for l in nopen(fname):
         yield l.decode('utf8').strip().replace("\r", "")
         
 def bam_header_generator(orig_header, chrom_size, prog_name, prog_ver, co, format_ver=1.0, sort_type = 'coordinate'):
-    '''
-    generates header section for BAM file
-    '''
+    """
+    Build a new BAM header with updated chromosome sizes and program metadata.
+
+    Parameters
+    ----------
+    orig_header : dict
+        Original BAM header from pysam header.to_dict().
+    chrom_size : dict
+        Chromosome name → size for the query (destination) genome.
+    prog_name : str
+        Program name for the PG tag.
+    prog_ver : str
+        Program version for the PG tag.
+    co : list of str
+        Comments to append to the CO tag.
+    format_ver : str or float
+        BAM format version for the HD VN field.
+    sort_type : str
+        Sort order for the HD SO field.
+
+    Returns
+    -------
+    tuple of (dict, dict)
+        Updated header dict and a chromosome name → integer ID mapping.
+    """
     bamHeaderLine=orig_header.copy()
     name2id={}
     id = 0
@@ -81,15 +113,33 @@ def bam_header_generator(orig_header, chrom_size, prog_name, prog_ver, co, forma
 
 complement = {'A':'T','C':'G','G':'C','T':'A','N':'N','X':'X'}
 def revcomp_DNA(dna):
+    """Return the reverse complement of a DNA string (supports A/C/G/T/N/X)."""
     return ''.join([complement[base] for base in reversed(dna)])
 
 def read_chain_sizes(chain_file,target_contig_list, query_contig_list):
+    """
+    Read chromosome sizes from a UCSC chain file without loading alignment intervals.
+
+    Parameters
+    ----------
+    chain_file : str
+        Path to a chain file (plain, gzip, or bzip2).
+    target_contig_list : list of str
+        Contigs present in the target (source) genome.
+    query_contig_list : list of str
+        Contigs present in the query (destination) genome.
+
+    Returns
+    -------
+    tuple of (dict, dict)
+        (tSizeDict, qSizeDict) mapping chromosome names to sizes.
+    """
     chainnames = ["score","tName","tSize","tStrand","tStart","tEnd","qName","qSize","qStrand","qStart","qEnd","id"]
     last_nfields = 1
     tSizeDict = {}
     qSizeDict = {}
     skip = False
-    
+
     # Note target is the reference, query is the genome to map to. This terminology is confusing to me
     # and apparently also the writer of Crossmap, but I will try to be consistent
     
@@ -135,6 +185,28 @@ def read_chain_sizes(chain_file,target_contig_list, query_contig_list):
     return (tSizeDict, qSizeDict)
   
 def read_chain_file(chain_file,target_contig_list, query_contig_list):
+    """
+    Parse a UCSC chain file into per-chromosome interval trees for fast lookup.
+
+    Each node in the tree stores the corresponding query coordinates and strand.
+    Builds one bx-python Intersecter per target chromosome.
+
+    Parameters
+    ----------
+    chain_file : str
+        Path to a chain file (plain, gzip, or bzip2).
+    target_contig_list : list of str
+        Contigs present in the target (source) genome.
+    query_contig_list : list of str
+        Contigs present in the query (destination) genome.
+
+    Returns
+    -------
+    tuple of (dict, dict, dict)
+        maps : target chrom → Intersecter of chain intervals
+        tSizeDict : target chrom → chromosome size
+        qSizeDict : query chrom → chromosome size
+    """
     chainnames = ["score","tName","tSize","tStrand","tStart","tEnd","qName","qSize","qStrand","qStart","qEnd","id"]
     maps = {}
     this_chain = {}
@@ -217,19 +289,30 @@ def read_chain_file(chain_file,target_contig_list, query_contig_list):
             raise Exception("Invalid chain format. (%s)" % line)
     return (maps, tSizeDict, qSizeDict)
         
-def inside(s1,e1,s2,e2): # is range 1 inside range 2?
+def inside(s1,e1,s2,e2):
+    """Return True if [s1, e1) is fully contained within [s2, e2)."""
     if (s1 >= s2 and e1 <= e2):
         return True
     else:
         return False
     
-def get_chr_chains(maps, chrom): # we dont want to keep having to keep checking chr since the reads will be sorted by chr
+def get_chr_chains(maps, chrom):
+    """Return the Intersecter for chrom, or None if chrom has no chains."""
     if (chrom not in maps):
         return None
     else:
         return maps[chrom]
 
 def get_chains(chr_chains, start, end):
+    """
+    Return chains that fully contain [start, end), sorted by descending score.
+
+    Parameters
+    ----------
+    chr_chains : bx.intervals.intersection.Intersecter
+    start, end : int
+        Read coordinates in target genome (0-based, half-open).
+    """
     chains = sorted(chr_chains.find(start, end), key=lambda chain: -chain.value['score'])
     out = []
     for chain in chains:
@@ -238,6 +321,11 @@ def get_chains(chr_chains, start, end):
     return(out)
   
 def get_chains_pe(chr_chains, start1, end1, start2, end2):
+    """
+    Return chains that fully contain both read1 [start1, end1) and read2 [start2, end2).
+
+    Both reads must be fully enclosed in the same chain for a pair to be lifted.
+    """
     chains = sorted(chr_chains.find(start1, end1), key=lambda chain: -chain.value['score'])
     out = []
     for chain in chains:
@@ -246,14 +334,21 @@ def get_chains_pe(chr_chains, start1, end1, start2, end2):
             out.append(chain)
     return(out)
 
-def string_ident(str1, str2): 
+def string_ident(str1, str2):
+    """Return the fraction of positions at which str1 and str2 differ."""
     s = sum(1 for a, b in zip(str1, str2) if a != b)
     return s/len(str1)
 
-def add_solid_interval(out, read_chr, intervals, this_absolute_start, this_absolute_end, 
-                       this_relative_start, this_relative_end, this_add, target_fasta, 
+def add_solid_interval(out, read_chr, intervals, this_absolute_start, this_absolute_end,
+                       this_relative_start, this_relative_end, this_add, target_fasta,
                        query_fasta, read_seq, tup, read_quality):
+    """
+    Append a single uninterrupted alignment block to the liftover output dict.
 
+    Fetches target and query sequences for the block and substitutes read-specific
+    variants: positions where the read differs from the target are kept as-is;
+    positions that match the target are replaced by the query base.
+    """
     query_chr  = intervals[0].value[0]
     # grab this section of read from the genome so we can find mismatches
     target_tmp    = target_fasta.fetch(read_chr, this_absolute_start, this_absolute_end).upper()
@@ -302,10 +397,17 @@ def add_solid_interval(out, read_chr, intervals, this_absolute_start, this_absol
     
     return out, this_absolute_start, this_relative_start
 
-def add_gapped_interval(out, read_chr, intervals, this_absolute_start, this_absolute_end, 
-                        this_relative_start, this_relative_end, this_add, target_fasta, 
+def add_gapped_interval(out, read_chr, intervals, this_absolute_start, this_absolute_end,
+                        this_relative_start, this_relative_end, this_add, target_fasta,
                         query_fasta, read_seq, tup, read_quality):
+    """
+    Append an alignment block that spans multiple chain sub-intervals (indels between species).
 
+    Called when a read's aligned segment crosses one or more gaps in the chain —
+    i.e., insertions or deletions in the target relative to the query. Handles
+    coordinate remapping, sequence conversion, and quality tracking across all
+    sub-intervals and the gaps between them.
+    """
     query_chr     = intervals[0].value[0]
     nintervals    = len(intervals)
     is_reverse    = out['is_reverse']
@@ -475,9 +577,32 @@ def add_gapped_interval(out, read_chr, intervals, this_absolute_start, this_abso
 # 4 = There are internal insertions or deletions in the target relative to the query
 
 def liftover_segment(chain, old_alignment, target_fasta, query_fasta, read_chr):
-    # we will build a list of possible matches with every chain that covers this read
-    # we will then return the one in the end that has the best score
-    
+    """
+    Convert a single BAM alignment from target to query genome coordinates.
+
+    Walks the CIGAR string and maps each match block through the chain interval
+    tree. Returns a result dict; check result['pass'] before using it.
+
+    Parameters
+    ----------
+    chain : bx.intervals.intersection.Interval
+        Chain interval that fully contains this read.
+    old_alignment : pysam.AlignedSegment
+        Original alignment in the target genome.
+    target_fasta : pysam.FastaFile
+        Indexed FASTA for the target (source) genome.
+    query_fasta : pysam.FastaFile
+        Indexed FASTA for the query (destination) genome.
+    read_chr : str
+        Target chromosome name for the read.
+
+    Returns
+    -------
+    dict
+        Keys: 'pass' (bool), 'error type' (0=ok, 2=no chain match,
+        3=read boundary falls in an indel), 'query_sequence', 'query_chrom',
+        'query_pos', 'cigartuples', 'qualityscores', 'is_reverse'.
+    """
     read_start   = old_alignment.reference_start
     read_seq     = old_alignment.query_sequence
     read_quality = old_alignment.query_qualities
@@ -584,6 +709,21 @@ def liftover_segment(chain, old_alignment, target_fasta, query_fasta, read_chr):
 
 # divide the genome up into equal sized chunks
 def get_genome_chunks(tSizes,n):
+    """
+    Partition the genome into n roughly equal-sized genomic chunks.
+
+    Parameters
+    ----------
+    tSizes : dict
+        Chromosome name → size mapping.
+    n : int
+        Number of chunks to produce.
+
+    Returns
+    -------
+    list of list of tuple
+        Each inner list is one chunk: [(chrom, start, end), ...].
+    """
     out = []
     out.append([])
     
@@ -613,19 +753,49 @@ def get_genome_chunks(tSizes,n):
                 out.append([])       
     return out
     
-def process_se(SAMFILE        = None, 
-               outfile        = None, 
-               old_header     = None, 
-               new_header     = None, 
-               target_fasta   = None, 
+def process_se(SAMFILE        = None,
+               outfile        = None,
+               old_header     = None,
+               new_header     = None,
+               target_fasta   = None,
                query_fasta    = None,
-               maps           = None, 
+               maps           = None,
                tSizes         = None,
                qSizes         = None,
                chainfile      = None,
                name_to_id     = None,
                best           = None):
-    
+    """
+    Lift all single-end reads in SAMFILE to the query genome and write to outfile.
+
+    Parameters
+    ----------
+    SAMFILE : pysam.AlignmentFile
+        Input BAM coordinate-sorted against the target genome.
+    outfile : pysam.AlignmentFile
+        Output BAM handle for successfully lifted reads.
+    old_header : dict
+        Original BAM header (used for reference name lookup).
+    new_header : dict
+        New BAM header with query genome chromosome sizes.
+    target_fasta : pysam.FastaFile
+        Target genome sequence.
+    query_fasta : pysam.FastaFile
+        Query genome sequence.
+    maps : dict
+        Per-chromosome interval trees from read_chain_file.
+    tSizes, qSizes : dict
+        Target / query chromosome size dicts.
+    name_to_id : dict
+        Query chromosome name → integer BAM reference ID.
+    best : bool
+        If True, only attempt liftover with the highest-scoring chain.
+
+    Returns
+    -------
+    tuple of int
+        (total_reads, lifted_ok, no_chain, no_match, boundary_indel, unpaired)
+    """
     OUT_FILE_QUERY = outfile
     
     new_header = pysam.AlignmentHeader.from_dict(new_header)
@@ -724,19 +894,52 @@ def process_se(SAMFILE        = None,
     
     return (nreads, n0, n1, n2, n3, n4)
   
-def process_pe(SAMFILE        = None, 
-               outfile        = None, 
-               old_header     = None, 
-               new_header     = None, 
-               target_fasta   = None, 
-               query_fasta    = None, 
-               maps           = None, 
+def process_pe(SAMFILE        = None,
+               outfile        = None,
+               old_header     = None,
+               new_header     = None,
+               target_fasta   = None,
+               query_fasta    = None,
+               maps           = None,
                tSizes         = None,
                qSizes         = None,
                chainfile      = None,
                name_to_id     = None,
                best           = None):
+    """
+    Lift all paired-end reads in SAMFILE to the query genome and write to outfile.
 
+    Both reads in a pair must be lifted successfully by the same chain;
+    pairs that end up on the same strand or exceed 10 kb insert size are discarded.
+
+    Parameters
+    ----------
+    SAMFILE : pysam.AlignmentFile
+        Input BAM coordinate-sorted against the target genome.
+    outfile : pysam.AlignmentFile
+        Output BAM handle for successfully lifted read pairs.
+    old_header : dict
+        Original BAM header (used for reference name lookup).
+    new_header : dict
+        New BAM header with query genome chromosome sizes.
+    target_fasta : pysam.FastaFile
+        Target genome sequence.
+    query_fasta : pysam.FastaFile
+        Query genome sequence.
+    maps : dict
+        Per-chromosome interval trees from read_chain_file.
+    tSizes, qSizes : dict
+        Target / query chromosome size dicts.
+    name_to_id : dict
+        Query chromosome name → integer BAM reference ID.
+    best : bool
+        If True, only attempt liftover with the highest-scoring chain.
+
+    Returns
+    -------
+    tuple of int
+        (total_reads, lifted_ok, no_chain, no_match, boundary_indel, failed_pair)
+    """
     new_header = pysam.AlignmentHeader.from_dict(new_header)
     OUT_FILE_QUERY = outfile
     

@@ -1,3 +1,10 @@
+"""
+Convert 10x Genomics v3.1 scRNA-seq BAMs aligned by STARsolo back to FASTQ.
+
+Reconstructs R1 (barcode+UMI) from the sS/sQ tags and R2 (cDNA) from the
+aligned sequence, writing paired gzip-compressed FASTQ files suitable for
+realignment.
+"""
 import sys
 import argparse
 import pysam

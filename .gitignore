@@ -1,0 +1,21 @@
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Test outputs (generated; not reference data)
+test/STARrefs/
+test/big/
+test/*.filtered.bam
+test/*.bam
+test/profile_output.txt
+
+# Timing log is machine-specific
+test/timing_log.txt
+
+# Claude context (personal/local)
+CLAUDE.md

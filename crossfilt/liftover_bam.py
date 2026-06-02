@@ -1,3 +1,9 @@
+"""
+crossfilt-lift: Lift BAM alignments from one genome to another using UCSC chain files.
+
+Converts both coordinates and nucleotide sequences for each read so that the
+output BAM reflects orthologous positions in the query (destination) genome.
+"""
 import sys
 import argparse
 import pysam
@@ -15,7 +21,7 @@ __version__ = importlib.metadata.version('crossfilt')
 def main():
   parser = argparse.ArgumentParser(
                         prog='crossfilt-lift',
-                        description='Converts genome coordinates and nucleotide sequence for othologous segments in a BAM file')
+                        description='Converts genome coordinates and nucleotide sequence for orthologous segments in a BAM file')
     
   parser.add_argument("-i", "--input",         required=True,  help="The input BAM file to convert")
   parser.add_argument("-o", "--output",        required=True,  help="Name prefix for the output file")
@@ -24,6 +30,8 @@ def main():
   parser.add_argument("-q", "--query-fasta",   required=True,  help="The genomic sequence of the query (the species we are converting to)")
   parser.add_argument("-p", "--paired",        required=False, help="Add this flag if the reads are paired", action="store_true")
   parser.add_argument("-b", "--best",          required=False, help="Only attempt to lift using the best chain", action="store_true")
+  parser.add_argument("-@", "--threads",       required=False, help="Number of compression/decompression threads when reading/writing bam files.", default=1, type=int)
+  
 
   parser.add_argument('--version', action='version',
                     version='CrossFilt v{version}'.format(version=__version__))
@@ -48,7 +56,7 @@ def main():
   if not os.path.exists(infile + ".bai"):
     pysam.index(infile)
   
-  SAMFILE     = pysam.AlignmentFile(infile, "rb")
+  SAMFILE     = pysam.AlignmentFile(infile, "rb", threads = args.threads)
   index_stats = SAMFILE.get_index_statistics()
   old_header  = SAMFILE.header.to_dict()
   
@@ -100,15 +108,15 @@ def main():
   (new_header, name_to_id) = lift.bam_header_generator(orig_header = old_header, 
                                                        chrom_size  = qSizes, 
                                                        prog_name   = "CrossFilt",
-                                                       prog_ver    = 1.0, 
-                                                       format_ver  = 1.0,
+                                                       prog_ver    = __version__, 
+                                                       format_ver  = __version__,
                                                        sort_type   = 'coordinate',
                                                        co          = comments)
   
   
   
   tempname = outfile_prefix + '.temp' + str(randint(0,99999)) + '.bam'
-  tempfile = pysam.Samfile(tempname, "wb", header = new_header)
+  tempfile = pysam.Samfile(tempname, "wb", header = new_header, threads = args.threads)
   
   kwds = {'SAMFILE'        : SAMFILE, 
           'outfile'        : tempfile, 
@@ -156,8 +164,8 @@ def main():
   start = timer()
   print("Sorting",file=sys.stderr)
   
-  pysam.sort("-o", outfile_prefix + ".bam", tempname)
-  pysam.index(outfile_prefix + ".bam")
+  pysam.sort("-@", str(args.threads), "-o", outfile_prefix + ".bam", tempname)
+  pysam.index("-@", str(args.threads), outfile_prefix + ".bam")
   os.remove(tempname)
   
   end = timer()
