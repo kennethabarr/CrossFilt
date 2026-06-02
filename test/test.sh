@@ -34,36 +34,37 @@ THREADS=24
 mkdir -p STARrefs/human STARrefs/chimp
 
 #STAR cant use compressed files, so uncompress first
-gunzip < "$TARGET_FA" > tmp.fa
-gunzip < "$TARGET_GTF" > tmp.gtf
+if [ ! -f STARrefs/human/SAindex ]; then
+  gunzip < "$TARGET_FA" > tmp.fa
+  gunzip < "$TARGET_GTF" > tmp.gtf
+  STAR \
+    --runThreadN "$THREADS" \
+    --runMode genomeGenerate \
+    --genomeDir STARrefs/human \
+    --genomeFastaFiles tmp.fa \
+    --sjdbGTFfile tmp.gtf \
+    --sjdbOverhang 49 \
+    --sjdbGTFtagExonParentGene gene_name \
+    --genomeSAindexNbases 11 \
+    --readFilesCommand zcat
+  rm tmp.fa tmp.gtf
+fi
 
-STAR \
-  --runThreadN "$THREADS" \
-  --runMode genomeGenerate \
-  --genomeDir STARrefs/human \
-  --genomeFastaFiles tmp.fa \
-  --sjdbGTFfile tmp.gtf \
-  --sjdbOverhang 49 \
-  --sjdbGTFtagExonParentGene gene_name \
-  --genomeSAindexNbases 11 \
-  --readFilesCommand zcat
-
-gunzip < "$QUERY_FA" > tmp.fa
-gunzip < "$QUERY_GTF" > tmp.gtf
-
-STAR \
-  --runThreadN "$THREADS" \
-  --runMode genomeGenerate \
-  --genomeDir STARrefs/chimp \
-  --genomeFastaFiles tmp.fa \
-  --sjdbGTFfile tmp.gtf \
-  --sjdbOverhang 49 \
-  --sjdbGTFtagExonParentGene gene_name \
-  --genomeSAindexNbases 11 \
-  --readFilesCommand zcat
-
-rm tmp.fa
-rm tmp.gtf
+if [ ! -f STARrefs/chimp/SAindex ]; then
+  gunzip < "$QUERY_FA" > tmp.fa
+  gunzip < "$QUERY_GTF" > tmp.gtf
+  STAR \
+    --runThreadN "$THREADS" \
+    --runMode genomeGenerate \
+    --genomeDir STARrefs/chimp \
+    --genomeFastaFiles tmp.fa \
+    --sjdbGTFfile tmp.gtf \
+    --sjdbOverhang 49 \
+    --sjdbGTFtagExonParentGene gene_name \
+    --genomeSAindexNbases 11 \
+    --readFilesCommand zcat
+  rm tmp.fa tmp.gtf
+fi
 
 
 ############ RUN INITIAL ALIGNMENT TO TARGET #################

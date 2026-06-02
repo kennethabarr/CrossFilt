@@ -40,6 +40,21 @@ def read_pair_generator(bam):
             del read_dict[qname]
        
        
+def _flush_chunk(this_file, outfile_prefix, file_iter, threads, old_header):
+    """Close the current chunk, sort and index it, remove the unsorted temp, and open the next."""
+    this_file.close()
+    pysam.sort("-@", str(threads), "-o", outfile_prefix + ".sorted." + str(file_iter) + ".bam",
+               outfile_prefix + "." + str(file_iter) + ".bam")
+    pysam.index(outfile_prefix + ".sorted." + str(file_iter) + ".bam")
+    os.remove(outfile_prefix + "." + str(file_iter) + ".bam")
+    file_iter += 1
+    print("Splitting chunk " + str(file_iter), file=sys.stderr)
+    next_file = pysam.Samfile(outfile_prefix + "." + str(file_iter) + ".bam", "wb",
+                               header=old_header, threads=threads,
+                               format_options=['level=0'.encode('utf-8')])
+    return next_file, file_iter
+
+
 def main():
   parser = argparse.ArgumentParser(
                       prog='crossfilt-split',
@@ -96,35 +111,23 @@ def main():
   if is_paired:
     for read1, read2 in read_pair_generator(SAMFILE):
       chunk_iter += 2
-      
       this_file.write(read1)
       this_file.write(read2)
       if chunk_iter >= chunk_size:
-        this_file.close()
-        pysam.sort("-@", str(threads), "-o", outfile_prefix + ".sorted." + str(file_iter) + ".bam", outfile_prefix + "." + str(file_iter) + ".bam")
-        pysam.index(outfile_prefix + ".sorted." + str(file_iter) + ".bam")
-        os.remove(outfile_prefix + "." + str(file_iter) + ".bam")
+        this_file, file_iter = _flush_chunk(this_file, outfile_prefix, file_iter, threads, old_header)
         chunk_iter = 0
-        file_iter += 1
-        print("Splitting chunk " + str(file_iter),file=sys.stderr)
-        this_file = pysam.Samfile(outfile_prefix + "." + str(file_iter) + ".bam", "wb", header = old_header, threads = threads, format_options=['level=0'.encode('utf-8')])
   else:
     for read in SAMFILE.fetch(until_eof=True):
       chunk_iter += 1
       this_file.write(read)
       if chunk_iter >= chunk_size:
-        this_file.close()
-        pysam.sort("-@", str(threads), "-o", outfile_prefix + ".sorted." + str(file_iter) + ".bam", outfile_prefix + "." + str(file_iter) + ".bam")
-        pysam.index(outfile_prefix + ".sorted." + str(file_iter) + ".bam")
-        os.remove(outfile_prefix + "." + str(file_iter) + ".bam")
+        this_file, file_iter = _flush_chunk(this_file, outfile_prefix, file_iter, threads, old_header)
         chunk_iter = 0
-        file_iter += 1
-        print("Splitting chunk " + str(file_iter),file=sys.stderr)
-        this_file = pysam.Samfile(outfile_prefix + "." + str(file_iter) + ".bam", "wb", header = old_header, threads = threads, format_options=['level=0'.encode('utf-8')])
-              
-          
+
+  # flush the final (possibly partial) chunk
   this_file.close()
-  pysam.sort("-@", str(threads), "-o", outfile_prefix + ".sorted." + str(file_iter) + ".bam", outfile_prefix + "." + str(file_iter) + ".bam")
+  pysam.sort("-@", str(threads), "-o", outfile_prefix + ".sorted." + str(file_iter) + ".bam",
+             outfile_prefix + "." + str(file_iter) + ".bam")
   pysam.index(outfile_prefix + ".sorted." + str(file_iter) + ".bam")
   os.remove(outfile_prefix + "." + str(file_iter) + ".bam")
   SAMFILE.close()
