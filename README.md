@@ -4,6 +4,8 @@ CrossFilt is a tool developed to filter reads that cause alignment or annotation
 
 ## Changes
 
+The change from v0.2.1 to v0.2.2 includes documentation improvements and minor fixes. Added NumPy-style docstrings throughout the codebase. Fixed several typos in help text and the README (orthologous, decompression, recommend, pieces). Standardized the thread flag to `-@/--threads` across all three commands (crossfilt-split previously used `-n/--ncpu`). Added a `.gitignore`, reference checksums for the test outputs, and timing logging to the test script.
+
 The change from v0.1.5 to v0.2.0 includes major changes to the efficiency of crossfilt-filter. I have observed speedups of about 5x in some of our problems. I have also included two new flags in crossfilt-filter. The first is the --tag option. This will increase the flexibility of this tool, allowing users to choose different aligners that assign features in a different tag than htseq-count. I have also included an option to run on multiple threads, though note that these are compression/decompression threads and there will be minimal benefit beyond a few threads.
 
 ## Installation
