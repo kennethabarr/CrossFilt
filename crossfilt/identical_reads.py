@@ -166,7 +166,9 @@ def main():
       # check read names to make sure they match
       if not read1.query_name == read2.query_name:
         sys.exit("Error: Read number " + str(i) + " query names are not identical (" + read1.query_name + " and " + read2.query_name + ")\nUse position sorted files or filter and sort your bam files by name.")
-      
+
+      if not read1.cigarstring == read2.cigarstring: continue
+
       if not tags_equal(read1, read2, tags): continue
     
       matched += 1

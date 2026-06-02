@@ -230,10 +230,10 @@ def read_chain_file(chain_file,target_contig_list, query_contig_list):
         nfields = len(fields)
         
         if (last_nfields == 1 and fields[0] != 'chain'):
-                raise Exception("Chain file has incorrect number of fields 1", file=sys.stderr)
-                
+                raise Exception("Chain file has incorrect number of fields 1")
+
         if (last_nfields != 1 and fields[0] == 'chain'):
-                raise Exception("Chain file has incorrect number of fields 2", file=sys.stderr)
+                raise Exception("Chain file has incorrect number of fields 2")
                                 
         if fields[0] == 'chain' and nfields in [12, 13]:
             last_nfields = nfields

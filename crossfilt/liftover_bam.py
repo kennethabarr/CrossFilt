@@ -90,7 +90,6 @@ def main():
       
   if total_reads == 0:
     print("There were zero reads remaining after filtering out contigs without chains\n", file=sys.stderr)
-    os.remove(tempname)
     exit()
     
   end = timer()

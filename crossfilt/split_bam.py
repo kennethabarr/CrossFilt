@@ -110,7 +110,7 @@ def main():
         chunk_iter = 0
         file_iter += 1
         print("Splitting chunk " + str(file_iter),file=sys.stderr)
-        this_file = pysam.Samfile(outfile_prefix + ".input." + str(file_iter) + ".bam", "wb", header = old_header, threads = max(round(threads/2), 1), format_options=['level=1'.encode('utf-8')])
+        this_file = pysam.Samfile(outfile_prefix + "." + str(file_iter) + ".bam", "wb", header = old_header, threads = max(round(threads/2), 1), format_options=['level=1'.encode('utf-8')])
   else:
     for read in SAMFILE.fetch(until_eof=True):
       chunk_iter += 1
