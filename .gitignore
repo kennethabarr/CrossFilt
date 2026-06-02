@@ -14,8 +14,15 @@ test/*.filtered.bam
 test/*.bam
 test/profile_output.txt
 
-# Timing log is machine-specific
+# Timing log and profiling output are machine-specific
 test/timing_log.txt
+test/_profile_*.py
+test/_profile_*.txt
+test/*.prof
+test/*.bai
+
+# Reference BAMs for diffing — kept locally, not in git
+test/reference/
 
 # Claude context (personal/local)
 CLAUDE.md

@@ -244,6 +244,8 @@ def get_chains(chr_chains, start, end):
     """
     out = [c for c in chr_chains.find(start, end)
            if inside(start, end, c.value['tStart'], c.value['tEnd'])]
+    if len(out) <= 1:
+        return out
     return sorted(out, key=lambda c: -c.value['score'])
   
 def get_chains_pe(chr_chains, start1, end1, start2, end2):
@@ -551,77 +553,76 @@ def liftover_segment(chain, old_alignment, target_fasta, query_fasta, read_chr,
     out['has_deletion']       = False
     
     for tup in cigar_tuples:
-        match(tup[0]):
-            case (0):
-                this_add = tup[1]
-                
-                if not out['pass']: continue
-                    
-                this_absolute_end = this_absolute_start + this_add
-                this_relative_end = this_relative_start + this_add
-                
-                intervals = chain.value['mapTree'].find(this_absolute_start, this_absolute_end)
-                    
-                if (len(intervals) == 0):
-                    out['pass'] = False
-                    out['error type'] = 2
-                    continue
-                elif (len(intervals) == 1):
-                    # I will require the start and end position of the read to match in the query
-                    if (intervals[0].start > this_absolute_start or intervals[0].end < this_absolute_end):
-                        out['pass'] = False
-                        out['error type'] = 3
-                        continue
-                    elif convert_seq:
-                        out, this_absolute_start, this_relative_start = add_solid_interval(out,
-                                read_chr, intervals, this_absolute_start, this_absolute_end,
-                                this_relative_start, this_relative_end, this_add, target_fasta,
-                                query_fasta, read_seq, tup, read_quality)
-                    else:
-                        # coordinate-only: compute query position without FASTA access
-                        offset = abs(intervals[0].start - this_absolute_start)
-                        query_start = (intervals[0].value[2] - offset - this_add if out['is_reverse']
-                                       else intervals[0].value[1] + offset)
-                        out['segments'].append((query_start, query_start + this_add))
-                        out['query_pos'] = (query_start if out['query_pos'] is None
-                                            else min(out['query_pos'], query_start))
-                        out['cigartuples'].append(tup)
-                        this_absolute_start += this_add
-                        this_relative_start += this_add
+        op = tup[0]
+        if op == 0:  # match/mismatch
+            this_add = tup[1]
 
-                else: # we have gaps in the alignment
-                    out['has_indel'] = True
-                    if (intervals[0].start > this_absolute_start or intervals[-1].end < this_absolute_end):
-                        out['pass'] = False
-                        out['error type'] = 3
-                        continue
-                    elif convert_seq:
-                        out, this_absolute_start, this_relative_start = add_gapped_interval(out,
+            if not out['pass']: continue
+
+            this_absolute_end = this_absolute_start + this_add
+            this_relative_end = this_relative_start + this_add
+
+            intervals = chain.value['mapTree'].find(this_absolute_start, this_absolute_end)
+
+            if (len(intervals) == 0):
+                out['pass'] = False
+                out['error type'] = 2
+                continue
+            elif (len(intervals) == 1):
+                # I will require the start and end position of the read to match in the query
+                if (intervals[0].start > this_absolute_start or intervals[0].end < this_absolute_end):
+                    out['pass'] = False
+                    out['error type'] = 3
+                    continue
+                elif convert_seq:
+                    out, this_absolute_start, this_relative_start = add_solid_interval(out,
                             read_chr, intervals, this_absolute_start, this_absolute_end,
                             this_relative_start, this_relative_end, this_add, target_fasta,
                             query_fasta, read_seq, tup, read_quality)
-                    else:
-                        out, this_absolute_start = _coords_only_gapped_interval(
-                            out, intervals, this_absolute_start, this_absolute_end, this_add)
-                        this_relative_start += this_add
-                        
- 
-            case (1 | 4): # insertion or soft clip. Advance relative position; build seq only if convert_seq
-                if not out['pass']: continue
-                this_add = tup[1]
-                this_relative_end = this_relative_start + this_add
-                if convert_seq:
-                    out['query_sequence'] += read_seq[this_relative_start:this_relative_end]
-                    out['qualityscores'].extend(read_quality[this_relative_start:this_relative_end])
-                out['cigartuples'].append(tup)
-                out['segments'].append(None)
-                this_relative_start = this_relative_end
-            case (2 | 3): # deletion or skip. Add to genomic position but add no sequence
-                if not out['pass']: continue
-                this_add = tup[1]
-                this_absolute_start += this_add   
-                out['cigartuples'].append(tup)
-                out['segments'].append(None)
+                else:
+                    # coordinate-only: compute query position without FASTA access
+                    offset = abs(intervals[0].start - this_absolute_start)
+                    query_start = (intervals[0].value[2] - offset - this_add if out['is_reverse']
+                                   else intervals[0].value[1] + offset)
+                    out['segments'].append((query_start, query_start + this_add))
+                    out['query_pos'] = (query_start if out['query_pos'] is None
+                                        else min(out['query_pos'], query_start))
+                    out['cigartuples'].append(tup)
+                    this_absolute_start += this_add
+                    this_relative_start += this_add
+
+            else:  # we have gaps in the alignment
+                out['has_indel'] = True
+                if (intervals[0].start > this_absolute_start or intervals[-1].end < this_absolute_end):
+                    out['pass'] = False
+                    out['error type'] = 3
+                    continue
+                elif convert_seq:
+                    out, this_absolute_start, this_relative_start = add_gapped_interval(out,
+                        read_chr, intervals, this_absolute_start, this_absolute_end,
+                        this_relative_start, this_relative_end, this_add, target_fasta,
+                        query_fasta, read_seq, tup, read_quality)
+                else:
+                    out, this_absolute_start = _coords_only_gapped_interval(
+                        out, intervals, this_absolute_start, this_absolute_end, this_add)
+                    this_relative_start += this_add
+
+        elif op in (1, 4):  # insertion or soft clip
+            if not out['pass']: continue
+            this_add = tup[1]
+            this_relative_end = this_relative_start + this_add
+            if convert_seq:
+                out['query_sequence'] += read_seq[this_relative_start:this_relative_end]
+                out['qualityscores'].extend(read_quality[this_relative_start:this_relative_end])
+            out['cigartuples'].append(tup)
+            out['segments'].append(None)
+            this_relative_start = this_relative_end
+
+        elif op in (2, 3):  # deletion or skip
+            if not out['pass']: continue
+            this_absolute_start += tup[1]
+            out['cigartuples'].append(tup)
+            out['segments'].append(None)
             
     
     # update the length of Ns
@@ -654,7 +655,6 @@ def _build_lifted_alignment(new_header, old_alignment, new_read, name_to_id,
     aln = pysam.AlignedRead(new_header)
 
     aln.query_name = old_alignment.query_name
-    aln.set_tags(old_alignment.get_tags())
 
     aln.next_reference_id    = -1
     aln.next_reference_start = 0
@@ -700,12 +700,10 @@ def _build_lifted_alignment(new_header, old_alignment, new_read, name_to_id,
             aln.query_sequence  = orig_seq
             aln.query_qualities = orig_qual
 
-    try:
-        rg, rgt = old_alignment.get_tag("RG", with_value_type=True)
-    except KeyError:
-        pass
-    else:
-        aln.set_tag("RG", str(rg), rgt)
+    # Copy all tags in one pass, fixing the RG value type inline to avoid
+    # a second get_tag/set_tag round-trip.
+    tags = old_alignment.get_tags(with_value_type=True)
+    aln.set_tags([(t, str(v) if t == 'RG' else v, tp) for t, v, tp in tags])
 
     return aln
 
