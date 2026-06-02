@@ -488,6 +488,9 @@ def _coords_only_gapped_interval(out, intervals, this_absolute_start, this_absol
 
     out['segments'].append((query_start, query_end))
     out['query_pos'] = query_start if out['query_pos'] is None else min(out['query_pos'], query_start)
+    # Use query_end - query_start (correct query genome M length). If this differs from
+    # this_add (the original M length), _build_lifted_alignment will pad/trim the
+    # sequence with N's to keep the BAM valid.
     out['cigartuples'].append((0, query_end - query_start))
     out['has_indel'] = True
 
@@ -675,15 +678,27 @@ def _build_lifted_alignment(new_header, old_alignment, new_read, name_to_id,
             aln.query_qualities = new_read['qualityscores']
             aln.cigartuples     = new_read['cigartuples']
     else:
-        # keep original sequence; revcomp only if strand flipped
+        cigtuples = (new_read['cigartuples'][::-1] if new_read['is_reverse']
+                     else new_read['cigartuples'])
+        aln.cigartuples = cigtuples
+
+        # Required sequence length from the new CIGAR (sum of M/I/S ops)
+        cigar_seq_len = sum(l for op, l in cigtuples if op in (0, 1, 4))
+        orig_seq  = old_alignment.query_sequence
+        orig_qual = old_alignment.query_qualities
+
+        if len(orig_seq) != cigar_seq_len:
+            # Species-specific indel within a match block changed the M length.
+            # Replace with N's so the BAM remains valid; the coordinate is correct.
+            orig_seq  = 'N' * cigar_seq_len
+            orig_qual = array.array('B', [0] * cigar_seq_len)
+
         if new_read['is_reverse'] != old_alignment.is_reverse:
-            aln.query_sequence  = revcomp_DNA(old_alignment.query_sequence)
-            aln.query_qualities = old_alignment.query_qualities[::-1]
+            aln.query_sequence  = revcomp_DNA(orig_seq)
+            aln.query_qualities = orig_qual[::-1]
         else:
-            aln.query_sequence  = old_alignment.query_sequence
-            aln.query_qualities = old_alignment.query_qualities
-        aln.cigartuples = (new_read['cigartuples'][::-1] if new_read['is_reverse']
-                           else new_read['cigartuples'])
+            aln.query_sequence  = orig_seq
+            aln.query_qualities = orig_qual
 
     try:
         rg, rgt = old_alignment.get_tag("RG", with_value_type=True)

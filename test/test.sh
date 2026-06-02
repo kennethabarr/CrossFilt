@@ -140,12 +140,14 @@ crossfilt-lift \
   -o tmp_target_alignment/test.liftedback \
   -c "$QUERY2TARGET" \
   -t "$QUERY_FA" \
-  -q "$TARGET_FA"
-  
+  -q "$TARGET_FA" \
+  --no-seq
+
 # find reads that lifted back and mapped to the same gene.
+# bam1=counted so the output carries the original human sequence and XF tag.
 crossfilt-filter --xf \
-  tmp_target_alignment/test.liftedback.bam \
-  tmp_target_alignment/test.counted.bam > \
+  tmp_target_alignment/test.counted.bam \
+  tmp_target_alignment/test.liftedback.bam > \
   test.filtered.bam
   
 # the final file here is the test.filtered.bam file. It is now ready for counting
@@ -156,7 +158,7 @@ rm -r tmp_target_alignment
 
 ############ VERIFY SINGLE-END OUTPUT #################
 
-expected_se="85a8d3c6ed3cdd9be659c4aa6bfb6f4c"
+expected_se="25a7ff632c6a2fb87856844407e86fd4"
 actual_se=$(samtools view test.filtered.bam | md5sum | awk '{print $1}')
 if [ "$actual_se" != "$expected_se" ]; then
   echo "FAIL: test.filtered.bam checksum mismatch" >&2
@@ -253,12 +255,14 @@ crossfilt-lift \
   -c "$QUERY2TARGET" \
   -t "$QUERY_FA" \
   -q "$TARGET_FA" \
-  --paired
-  
+  --paired \
+  --no-seq
+
 # find reads that lifted back and mapped to the same gene.
+# bam1=counted so the output carries the original human sequence and XF tag.
 crossfilt-filter --xf \
-  tmp_target_alignment/test.liftedback.bam \
-  tmp_target_alignment/test.counted.sorted.bam > \
+  tmp_target_alignment/test.counted.sorted.bam \
+  tmp_target_alignment/test.liftedback.bam > \
   test_paired.filtered.bam
   
 # the final file here is the test_paired.filtered.bam file. It is now ready for counting
@@ -269,7 +273,7 @@ rm -r tmp_target_alignment
 
 ############ VERIFY PAIRED-END OUTPUT #################
 
-expected_pe="491558323726da049d99b10cb82937ab"
+expected_pe="d26d2d486656994d5fd6a5b99de2c0c7"
 actual_pe=$(samtools view test_paired.filtered.bam | md5sum | awk '{print $1}')
 if [ "$actual_pe" != "$expected_pe" ]; then
   echo "FAIL: test_paired.filtered.bam checksum mismatch" >&2

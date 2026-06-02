@@ -1,4 +1,5 @@
 # Expected md5sums of BAM read content (samtools view, no header) for the test pipeline outputs.
 # Regenerate with: samtools view <file> | md5sum
-491558323726da049d99b10cb82937ab  test_paired.filtered.bam
-85a8d3c6ed3cdd9be659c4aa6bfb6f4c  test.filtered.bam
+# Output BAMs carry the original human sequence (bam1=counted in the final crossfilt-filter).
+d26d2d486656994d5fd6a5b99de2c0c7  test_paired.filtered.bam
+25a7ff632c6a2fb87856844407e86fd4  test.filtered.bam
