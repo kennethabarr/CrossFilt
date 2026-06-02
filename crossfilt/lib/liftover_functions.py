@@ -584,6 +584,49 @@ def liftover_segment(chain, old_alignment, target_fasta, query_fasta, read_chr):
       
     return out
 
+def _build_lifted_alignment(new_header, old_alignment, new_read, name_to_id):
+    """
+    Construct a pysam AlignedRead in the query genome from a liftover result.
+
+    Copies query name and tags from old_alignment, sets coordinates from
+    new_read, handles strand reversal, and preserves the RG tag.
+    """
+    aln = pysam.AlignedRead(new_header)
+
+    aln.query_name = old_alignment.query_name
+    aln.set_tags(old_alignment.get_tags())
+
+    aln.next_reference_id    = -1
+    aln.next_reference_start = 0
+    aln.template_length      = 0
+
+    aln.reference_id    = name_to_id[new_read['query_chrom']]
+    aln.reference_start = new_read['query_pos']
+    aln.mapping_quality = old_alignment.mapping_quality
+
+    aln.flag = 0x0
+    if old_alignment.is_reverse != new_read['is_reverse']:
+        aln.flag = aln.flag | 0x10
+
+    if new_read['is_reverse']:
+        aln.query_sequence  = revcomp_DNA(new_read['query_sequence'])
+        aln.query_qualities = new_read['qualityscores'][::-1]
+        aln.cigartuples     = new_read['cigartuples'][::-1]
+    else:
+        aln.query_sequence  = new_read['query_sequence']
+        aln.query_qualities = new_read['qualityscores']
+        aln.cigartuples     = new_read['cigartuples']
+
+    try:
+        rg, rgt = old_alignment.get_tag("RG", with_value_type=True)
+    except KeyError:
+        pass
+    else:
+        aln.set_tag("RG", str(rg), rgt)
+
+    return aln
+
+
 def process_se(SAMFILE        = None,
                outfile        = None,
                old_header     = None,
@@ -674,49 +717,7 @@ def process_se(SAMFILE        = None,
             continue
 
 
-        # build the new alignment
-        new_alignment = pysam.AlignedRead(new_header) # create AlignedRead object
-        
-        new_alignment.query_name = old_alignment.query_name                
-        new_alignment.set_tags(old_alignment.get_tags() )                
-
-        new_alignment.next_reference_id = -1
-        new_alignment.next_reference_start = 0
-        new_alignment.template_length = 0
-        
-        new_alignment.reference_id    = name_to_id[new_read['query_chrom']]
-        new_alignment.reference_start = new_read['query_pos']
-        new_alignment.mapping_quality = old_alignment.mapping_quality
-                             
-        # the is_reverse flag tells us if the chain is on the reverse strand, NOT if the read sequence changed
-        # if 
-        # we need to add the bam flag 
-        new_alignment.flag = 0x0
-        
-        #if (new_read['is_reverse'] and old_alignment.is_forward): print("here")
-        
-        if old_alignment.is_reverse != new_read['is_reverse']:
-            #print(old_alignment.is_reverse, new_read['is_reverse'], "reversing")
-            new_alignment.flag = new_alignment.flag | 0x10
-            
-        if new_read['is_reverse']:
-            new_alignment.query_sequence  = revcomp_DNA(new_read['query_sequence'])
-            new_alignment.query_qualities = new_read['qualityscores'][::-1]
-            new_alignment.cigartuples     = new_read['cigartuples'][::-1]
-        else:
-            new_alignment.query_sequence  = new_read['query_sequence']
-            new_alignment.query_qualities = new_read['qualityscores']
-            new_alignment.cigartuples     = new_read['cigartuples']
-
-        # fix tags that get renamed
-        try:
-            rg, rgt = old_alignment.get_tag("RG", with_value_type=True)
-        except KeyError:
-            pass
-        else:
-            new_alignment.set_tag("RG", str(rg), rgt)
-            
-        OUT_FILE_QUERY.write(new_alignment)
+        OUT_FILE_QUERY.write(_build_lifted_alignment(new_header, old_alignment, new_read, name_to_id))
     
     return (nreads, n0, n1, n2, n3, n4)
   
@@ -823,76 +824,9 @@ def process_pe(SAMFILE        = None,
             n3 += 2
             continue
         
-        # build the new alignment
-        new_alignment1 = pysam.AlignedRead(new_header) # create AlignedRead object
-        new_alignment2 = pysam.AlignedRead(new_header)
-        
-        new_alignment1.query_name = old1.query_name                
-        new_alignment1.set_tags(old1.get_tags() )                
+        new_alignment1 = _build_lifted_alignment(new_header, old1, new1, name_to_id)
+        new_alignment2 = _build_lifted_alignment(new_header, old2, new2, name_to_id)
 
-        new_alignment1.next_reference_id = -1
-        new_alignment1.next_reference_start = 0
-        new_alignment1.template_length = 0
-        
-        new_alignment2.query_name = old2.query_name                
-        new_alignment2.set_tags(old2.get_tags() )                
-
-        new_alignment2.next_reference_id = -1
-        new_alignment2.next_reference_start = 0
-        new_alignment2.template_length = 0
-        
-        new_alignment1.reference_id    = name_to_id[new1['query_chrom']]
-        new_alignment1.reference_start = new1['query_pos']
-        new_alignment1.mapping_quality = old1.mapping_quality
-        
-        new_alignment2.reference_id    = name_to_id[new2['query_chrom']]
-        new_alignment2.reference_start = new2['query_pos']
-        new_alignment2.mapping_quality = old2.mapping_quality
-                             
-        # the is_reverse flag tells us if the chain is on the reverse strand, NOT if the read sequence changed
-        # we need to add the bam flag 
-        new_alignment1.flag = 0x0
-        new_alignment2.flag = 0x0
-        
-        if old1.is_reverse != new1['is_reverse']:
-            new_alignment1.flag = new_alignment1.flag | 0x10
-        
-        if old2.is_reverse != new2['is_reverse']:
-            new_alignment2.flag = new_alignment2.flag | 0x10
-            
-        if new1['is_reverse']:
-            new_alignment1.query_sequence  = revcomp_DNA(new1['query_sequence'])
-            new_alignment1.query_qualities = new1['qualityscores'][::-1]
-            new_alignment1.cigartuples     = new1['cigartuples'][::-1]
-        else:
-            new_alignment1.query_sequence  = new1['query_sequence']
-            new_alignment1.query_qualities = new1['qualityscores']
-            new_alignment1.cigartuples     = new1['cigartuples']
-            
-        if new2['is_reverse']:
-            new_alignment2.query_sequence  = revcomp_DNA(new2['query_sequence'])
-            new_alignment2.query_qualities = new2['qualityscores'][::-1]
-            new_alignment2.cigartuples     = new2['cigartuples'][::-1]
-        else:
-            new_alignment2.query_sequence  = new2['query_sequence']
-            new_alignment2.query_qualities = new2['qualityscores']
-            new_alignment2.cigartuples     = new2['cigartuples']
-
-        # fix tags that get renamed
-        try:
-            rg, rgt = old1.get_tag("RG", with_value_type=True)
-        except KeyError:
-            pass
-        else:
-            new_alignment1.set_tag("RG", str(rg), rgt)
-        
-        try:
-            rg, rgt = old2.get_tag("RG", with_value_type=True)
-        except KeyError:
-            pass
-        else:
-            new_alignment2.set_tag("RG", str(rg), rgt)
-        
         # make sure forward and reverse orientation are preserved
         if new_alignment1.is_reverse == new_alignment2.is_reverse:
           n4 += 2
