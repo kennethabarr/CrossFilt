@@ -29,9 +29,7 @@ QUERY2TARGET=chains/chimp2human.chain.gz
 # In this example I am aligning with STAR. First we need to build the
 # references.
 
-mkdir STARrefs
-mkdir STARrefs/human
-mkdir STARrefs/chimp
+mkdir -p STARrefs/human STARrefs/chimp
 
 #STAR cant use compressed files, so uncompress first
 gunzip < $TARGET_FA > tmp.fa
@@ -68,7 +66,7 @@ rm tmp.gtf
 
 ############ RUN INITIAL ALIGNMENT TO TARGET #################
 
-mkdir tmp_target_alignment
+mkdir -p tmp_target_alignment
 
 STAR \
   --genomeDir STARrefs/human \
@@ -91,7 +89,7 @@ samtools index tmp_target_alignment/test.counted.bam
 
 ############ LIFT TO QUERY GENOME AND ALIGN TO QUERY #################
 
-mkdir tmp_query_alignment/
+mkdir -p tmp_query_alignment/
 
 # run liftover to query genome
 crossfilt-lift \
@@ -172,7 +170,7 @@ echo "PASS: test.filtered.bam" >&2
 
 ############ RUN INITIAL ALIGNMENT TO TARGET #################
 
-mkdir tmp_target_alignment
+mkdir -p tmp_target_alignment
 
 STAR \
   --genomeDir STARrefs/human \
@@ -196,7 +194,7 @@ samtools index tmp_target_alignment/test.counted.sorted.bam
 
 ############ LIFT TO QUERY GENOME AND ALIGN TO QUERY #################
 
-mkdir tmp_query_alignment/
+mkdir -p tmp_query_alignment/
 
 # run liftover to query genome
 crossfilt-lift \
