@@ -4,6 +4,8 @@ CrossFilt is a tool developed to filter reads that cause alignment or annotation
 
 ## Changes
 
+v0.3.1: Added ConsensusGenomeTools entry points: `consensus-pair`, `consensus-merge`, and `consensus-vcf` for building consensus genomes and generating species-diagnostic VCFs.
+
 v0.3.0: Added `crossfilt-slm`, a combined split-lift-merge command that lifts chromosome bins in parallel. Added `pack_chromosomes` (LPT bin-packing) to the shared library with unit tests.
 
 v0.2.2: Documentation improvements and minor fixes. Added NumPy docstrings; fixed typos; standardized thread flag to `-@/--threads`; added `.gitignore`, reference checksums, and timing logging.
@@ -167,6 +169,72 @@ Thread allocation is managed automatically from the single `-@` budget. During t
 
 As a rough guide, set `-n` to the number of cores available and `-@` to the same value. For large experiments on a 24-core node, `-n 20 -@ 20` is a reasonable starting point.
 
+# ConsensusGenomeTools
 
+ConsensusGenomeTools builds consensus genomes for cross-species comparisons. Starting from a reference genome and one or more alternate genomes, it constructs a consensus sequence in the reference coordinate system where only positions with identical bases across all species are filled in and all other positions are masked as N. SNP positions identified this way can then be used to assign reads to species of origin.
 
+### consensus-pair
 
+```
+usage: consensus-pair [-h] -r REFERENCE -a ALTERNATE -c CHAIN [-l LENGTH] -o OUTPUT_PREFIX [--version]
+
+Builds a 2-way consensus genome in the coordinate system of the reference genome
+
+options:
+  -h, --help            show this help message and exit
+  -r REFERENCE, --reference REFERENCE
+                        The fasta sequence of the reference genome
+  -a ALTERNATE, --alternate ALTERNATE
+                        The fasta sequence of the alternate genome
+  -c CHAIN, --chain CHAIN
+                        The reference to alternate chain file
+  -l LENGTH, --length LENGTH
+                        The number of bases around indels to mask
+  -o OUTPUT_PREFIX, --output-prefix OUTPUT_PREFIX
+                        The prefix for the output files
+  --version             show program's version number and exit
+```
+
+`consensus-pair` takes a reference genome, an alternate genome, and a UCSC chain file and produces three output FASTAs in the reference coordinate system: `<prefix>_consensus.fa` (positions identical in both species), `<prefix>_reference.fa` (all filled positions with the reference base), and `<prefix>_alternate.fa` (all filled positions with the alternate base). Positions that differ between species, fall within or near an indel, or have no chain coverage are left as N.
+
+The `--length` option controls how many bases on either side of an indel boundary are masked (default: 6). Increasing this value produces a more conservative consensus at the cost of more masked positions.
+
+### consensus-merge
+
+```
+usage: consensus-merge [-h] -c CONSENSUS -c CONSENSUS [...] -o OUTPUT_PREFIX [--version]
+
+Takes consensus genomes (in the same coordinate system) and builds a new consensus.
+
+options:
+  -h, --help            show this help message and exit
+  -c CONSENSUS, --consensus CONSENSUS
+                        A consensus genome. Use argument multiple times for an N-way consensus.
+  -o OUTPUT_PREFIX, --output-prefix OUTPUT_PREFIX
+                        The prefix for the output files
+  --version             show program's version number and exit
+```
+
+`consensus-merge` takes two or more consensus genomes produced by `consensus-pair` (all in the same reference coordinate system) and outputs a single merged consensus where any position that is N in any input is set to N in the output. This is used to build an N-way consensus: run `consensus-pair` once per species pair, then pass all the resulting `_consensus.fa` files to `consensus-merge`.
+
+### consensus-vcf
+
+```
+usage: consensus-vcf [-h] -c CONSENSUS -g GENOMES -l LABELS -o OUTPUT_PREFIX [--version]
+
+Takes a consensus genome and consensus-converted alternate genomes and makes a VCF for identifying species.
+
+options:
+  -h, --help            show this help message and exit
+  -c CONSENSUS, --consensus CONSENSUS
+                        The N-way consensus genome
+  -g GENOMES, --genomes GENOMES
+                        Genomes in consensus coordinates, separated by commas
+  -l LABELS, --labels LABELS
+                        Column headers to use in the VCF file for these genomes, separated by commas
+  -o OUTPUT_PREFIX, --output-prefix OUTPUT_PREFIX
+                        The prefix for the output files
+  --version             show program's version number and exit
+```
+
+`consensus-vcf` takes the merged consensus genome and the per-species genomes in consensus coordinates (the `_reference.fa` and `_alternate.fa` outputs of `consensus-pair`) and writes a biallelic VCF. Each SNP position — defined as a position that is N in the consensus but flanked by non-N bases on both sides — is emitted as a record with diploid GT calls for each species. The resulting VCF can be used to assign sequencing reads to their species of origin.
