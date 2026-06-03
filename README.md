@@ -4,6 +4,8 @@ CrossFilt is a tool developed to filter reads that cause alignment or annotation
 
 ## Changes
 
+v0.3.2: Added `consensus-demux` entry point for building joint species+individual demultiplexing VCFs from consensus-aligned data.
+
 v0.3.1: Added ConsensusGenomeTools entry points: `consensus-pair`, `consensus-merge`, and `consensus-vcf` for building consensus genomes and generating species-diagnostic VCFs.
 
 v0.3.0: Added `crossfilt-slm`, a combined split-lift-merge command that lifts chromosome bins in parallel. Added `pack_chromosomes` (LPT bin-packing) to the shared library with unit tests.

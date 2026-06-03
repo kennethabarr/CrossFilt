@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 requires-python = ">= 3.10"
-version = "0.3.1"
+version = "0.3.2"
 
 authors = [
   {name = "Kenneth A Barr", email = "kenneth.a.barr@gmail.com"}
@@ -31,6 +31,7 @@ crossfilt-slm       = "crossfilt.slm_bam:main"
 consensus-pair  = "crossfilt.make_consensus:main"
 consensus-merge = "crossfilt.multiple_consensus:main"
 consensus-vcf   = "crossfilt.consensus_vcf:main"
+consensus-demux = "crossfilt.consensus_demux:main"
 
 [project.urls]
 Repository = "https://github.com/kennethabarr/CrossFilt.git"
