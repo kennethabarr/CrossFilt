@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 requires-python = ">= 3.10"
-version = "0.2.9"
+version = "0.3.0"
 
 authors = [
   {name = "Kenneth A Barr", email = "kenneth.a.barr@gmail.com"}
@@ -27,6 +27,7 @@ authors = [
 crossfilt-lift   = "crossfilt.liftover_bam:main"
 crossfilt-split  = "crossfilt.split_bam:main"
 crossfilt-filter = "crossfilt.identical_reads:main"
+crossfilt-slm    = "crossfilt.slm_bam:main"
 
 [project.urls]
 Repository = "https://github.com/kennethabarr/CrossFilt.git"

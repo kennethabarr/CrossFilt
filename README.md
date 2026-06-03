@@ -24,7 +24,7 @@ or conda with
 conda install bioconda::crossfilt
 ```
 
-This will create three scripts for implementing our method: crossfilt-lift, crossfilt-filter and crossfilt-split. 
+This will create four scripts for implementing our method: crossfilt-lift, crossfilt-filter, crossfilt-split, and crossfilt-slm. 
 
 We have included a test script and input files to verify that your installation is working correctly. This also serves as an example of how to run this pipeline to get filtered, unbiased reads for cross-species comparisons. This test will require STAR, htseq-count, and samtools. To run the test, clone this repository, navigate to the test directory and run
 
@@ -123,6 +123,47 @@ This tool will run on either position sorted and indexed files or on filtered an
 This tool will output the bam1 reads that have perfect matches in bam2. 
 
 If bam1 and bam2 are significantly different in size, this tool will be slightly more efficient if bam1 is the larger file.
+
+### crossfilt-slm
+
+```
+usage: crossfilt-slm [-h] -i INPUT -o OUTPUT -c CHAIN -t TARGET_FASTA -q QUERY_FASTA -n NFILES [-p] [-b] [-@ THREADS] [--no-seq] [--keep-chunks] [--version]
+
+Split a BAM by chromosome bins, lift each bin in parallel, and merge the results. Uses the BAM index for fast
+chromosome extraction; each worker reads only the chain entries for its chromosomes.
+
+options:
+  -h, --help            show this help message and exit
+  -i INPUT, --input INPUT
+                        Input BAM file (coordinate-sorted; indexed or indexable)
+  -o OUTPUT, --output OUTPUT
+                        Output BAM prefix (result written to <prefix>.bam)
+  -c CHAIN, --chain CHAIN
+                        UCSC chain file for the liftover
+  -t TARGET_FASTA, --target-fasta TARGET_FASTA
+                        FASTA for the target genome (reads are currently aligned to this)
+  -q QUERY_FASTA, --query-fasta QUERY_FASTA
+                        FASTA for the query genome (reads will be lifted to this)
+  -n NFILES, --nfiles NFILES
+                        Number of parallel chromosome chunks
+  -p, --paired          Input contains paired-end reads
+  -b, --best            Only use the highest-scoring chain for each read
+  -@ THREADS, --threads THREADS
+                        Total threads available. During the parallel lift phase each worker uses 1 BAM I/O thread
+                        (liftover is CPU-bound); sort threads per worker = threads // n_chunks. The final merge
+                        uses all threads.
+  --no-seq              Skip sequence conversion; only update coordinates and CIGAR
+  --keep-chunks         Keep intermediate per-chunk BAM files after merging
+  --version             show program's version number and exit
+```
+
+`crossfilt-slm` is a faster alternative to running `crossfilt-split` and `crossfilt-lift` separately. It combines splitting, lifting, and merging into a single command, and lifts all chromosome chunks in parallel.
+
+Splitting is done by reading the BAM index to assign whole chromosomes to each chunk, rather than iterating over individual reads. Chromosomes are packed into N balanced bins using the LPT (Longest Processing Time First) greedy algorithm, which minimises the imbalance between bins without solving the full bin-packing problem. Each worker then lifts its own chromosomes and reads only the portion of the chain file it needs. Because paired reads are always on the same chromosome, pairs are guaranteed to stay together without any special handling.
+
+Thread allocation is managed automatically from the single `-@` budget. During the parallel lift phase, each worker uses 1 BAM I/O thread (liftover is CPU-bound Python; extra I/O threads would compete across workers). The remaining threads are divided evenly across workers for the per-chunk sort. The final merge uses the full thread budget. For example, with `-n 4 -@ 20`, the lift phase runs 4 workers × 1 I/O thread, the sort phase runs 4 workers × 5 sort threads, and the merge uses 20 threads.
+
+As a rough guide, set `-n` to the number of cores available and `-@` to the same value. For large experiments on a 24-core node, `-n 20 -@ 20` is a reasonable starting point.
 
 
 

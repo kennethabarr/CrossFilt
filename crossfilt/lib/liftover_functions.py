@@ -12,6 +12,7 @@ import pysam
 import array
 import bz2
 import gzip
+import heapq
 import math
 import numpy as np
 from collections import defaultdict
@@ -953,3 +954,49 @@ def process_pe(SAMFILE        = None,
         OUT_FILE_QUERY.write(new_alignment2)
 
     return (nreads, n0, n1, n2, n3, n4)
+
+
+def pack_chromosomes(index_stats, n_files):
+    """
+    Distribute chromosomes into n_files bins as evenly as possible by read count.
+
+    Uses the LPT (Longest Processing Time First) greedy algorithm: sort
+    chromosomes by read count descending, then assign each one to the bin
+    with the current smallest total.  This produces near-optimal balance
+    without solving the NP-hard bin-packing problem exactly.
+
+    Parameters
+    ----------
+    index_stats : list
+        Sequence of pysam index-statistics objects (from
+        AlignmentFile.get_index_statistics()).  Each element must expose
+        ``.contig`` (str) and ``.total`` (int) attributes.
+    n_files : int
+        Desired number of output bins.
+
+    Returns
+    -------
+    list of list of str
+        Each inner list contains the chromosome names assigned to that bin,
+        in the order they were assigned.  Bins are ordered by their internal
+        index (stable assignment order).  Fewer than *n_files* bins are
+        returned when there are fewer non-empty chromosomes than *n_files*.
+    """
+    chroms = [(s.total, s.contig) for s in index_stats if s.total > 0]
+    if not chroms:
+        return []
+
+    n = min(n_files, len(chroms))
+    chroms.sort(reverse=True)           # LPT: assign largest chromosomes first
+
+    # heap entries: (bin_total, bin_index, chrom_list)
+    heap = [(0, i, []) for i in range(n)]
+    heapq.heapify(heap)
+
+    for count, chrom in chroms:
+        total, idx, chrom_list = heapq.heappop(heap)
+        chrom_list.append(chrom)
+        heapq.heappush(heap, (total + count, idx, chrom_list))
+
+    heap.sort(key=lambda x: x[1])      # restore stable bin-index order
+    return [cl for _, _, cl in heap if cl]
