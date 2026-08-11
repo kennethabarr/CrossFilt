@@ -4,6 +4,8 @@ CrossFilt is a tool developed to filter reads that cause alignment or annotation
 
 ## Changes
 
+v0.3.3: Fixed `consensus-pair`, which crashed on the first chromosome because it used the `intervaltree` API against bx-python interval objects. Fixed a missing `import sys` that crashed `consensus-merge`. `consensus-vcf` now checks that `--labels` and `--genomes` have matching lengths.
+
 v0.3.2: Added `consensus-demux` entry point for building joint species+individual demultiplexing VCFs from consensus-aligned data.
 
 v0.3.1: Added ConsensusGenomeTools entry points: `consensus-pair`, `consensus-merge`, and `consensus-vcf` for building consensus genomes and generating species-diagnostic VCFs.

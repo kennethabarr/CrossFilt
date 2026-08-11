@@ -4,6 +4,7 @@ crossfilt-merge: Merge N consensus genomes (all in the same coordinate system) i
 Takes two or more consensus genomes produced by consensus-pair and outputs a new
 consensus where any position that is N in any input genome is set to N in the output.
 """
+import sys
 import argparse
 import pysam
 from timeit import default_timer as timer

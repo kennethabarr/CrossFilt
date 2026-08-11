@@ -30,6 +30,10 @@ def main():
     output         = args.output_prefix
     consensus_file = args.consensus
 
+    if len(labels) != len(genome_files):
+        sys.exit("Error: --labels has " + str(len(labels)) + " entries but --genomes has " +
+                 str(len(genome_files)) + ". They must correspond one-to-one.")
+
     consensus_genome = pysam.Fastafile(consensus_file)
     genomes = [pysam.Fastafile(g) for g in genome_files]
 

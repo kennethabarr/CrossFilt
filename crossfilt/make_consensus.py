@@ -47,13 +47,13 @@ def main():
     print("Completed in", round(end - start, 2), "seconds\n", file=sys.stderr)
 
     def update_interval_consensus(interval, ref_chr, consensus_chr, reference_chr, alternate_chr):
-        ref_start  = interval.begin
+        ref_start  = interval.start
         ref_end    = interval.end
 
-        alt_chr    = interval.data[0]
-        alt_start  = interval.data[1]
-        alt_end    = interval.data[2]
-        alt_strand = interval.data[3]
+        alt_chr    = interval.value[0]
+        alt_start  = interval.value[1]
+        alt_end    = interval.value[2]
+        alt_strand = interval.value[3]
 
         ref_seq = REFFASTA.fetch(ref_chr, ref_start, ref_end).upper()
         alt_seq = ALTFASTA.fetch(alt_chr, alt_start, alt_end).upper()
@@ -62,6 +62,15 @@ def main():
             alt_seq = lift.revcomp_DNA(alt_seq)
 
         l = len(ref_seq)
+
+        if len(alt_seq) != l:
+            print("Warning: skipping block " +
+                  ref_chr + ":" + str(ref_start) + "-" + str(ref_end) + " -> " +
+                  alt_chr + ":" + str(alt_start) + "-" + str(alt_end) +
+                  " because the fetched sequences differ in length (" +
+                  str(l) + " vs " + str(len(alt_seq)) +
+                  "). Check that the chain file matches the fasta files.", file=sys.stderr)
+            return 0
 
         ndiff = 0
         nsame = 0
@@ -107,15 +116,24 @@ def main():
         alternate_chr = list("N" * this_len)
 
         this_chains = lift.get_chr_chains(maps, this_chr)
-        chains = sorted(this_chains, key=lambda chain: chain.data['score'])
+        if this_chains is None:
+            chains = []
+        else:
+            # Intersecter has no iteration protocol; find() over the whole
+            # chromosome returns every chain interval on it.
+            chains = this_chains.find(0, this_len)
+
+        # Ascending score: the best-scoring chain is applied last, so it
+        # overwrites any lower-scoring chain it overlaps.
+        chains = sorted(chains, key=lambda chain: chain.value['score'])
 
         for this_chain in chains:
-            n = this_chain.end - this_chain.begin
-            consensus_chr[this_chain.begin:this_chain.end] = list("N" * n)
-            reference_chr[this_chain.begin:this_chain.end] = list("N" * n)
-            alternate_chr[this_chain.begin:this_chain.end] = list("N" * n)
+            n = this_chain.end - this_chain.start
+            consensus_chr[this_chain.start:this_chain.end] = list("N" * n)
+            reference_chr[this_chain.start:this_chain.end] = list("N" * n)
+            alternate_chr[this_chain.start:this_chain.end] = list("N" * n)
 
-            for interval in this_chain.data['mapTree'].items():
+            for interval in this_chain.value['mapTree'].find(this_chain.start, this_chain.end):
                 update_interval_consensus(interval,
                                           this_chr,
                                           consensus_chr,
